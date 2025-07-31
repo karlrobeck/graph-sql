@@ -1,4 +1,4 @@
-use async_graphql::dynamic::{Field, TypeRef};
+use async_graphql::dynamic::{Field, Object, TypeRef};
 use sea_query::{Alias, ColumnDef, ColumnType};
 use sqlx::{SqlitePool, prelude::FromRow};
 
@@ -77,6 +77,18 @@ impl SqliteTable {
         }
 
         Ok(sqlite_tables)
+    }
+
+    pub fn to_graphql_object(&self) -> Object {
+        let table_name = self.table_info.name.clone();
+
+        let mut table_obj = Object::new(table_name.clone());
+
+        for col in self.column_info.clone() {
+            table_obj = table_obj.field(col.to_field(table_name.clone()));
+        }
+
+        table_obj
     }
 }
 

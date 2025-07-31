@@ -33,7 +33,7 @@ pub fn list_resolver<'a>(table_info: &SqliteTable, ctx: &ResolverContext<'a>) ->
         .fetch_all(db)
         .await?
         .into_iter()
-        .map(|(val,)| async_graphql::Value::Number(val.into()))
+        .map(|(val,)| val.into())
         .collect::<Vec<_>>();
 
         Ok(Some(Value::List(result)))

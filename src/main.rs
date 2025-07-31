@@ -1,5 +1,4 @@
 use async_graphql::{
-    Object,
     dynamic::{Field, Object, Schema, TypeRef},
     http::GraphiQLSource,
 };
@@ -11,26 +10,13 @@ use axum::{
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 
-use crate::{
-    resolvers::{column_resolver, list_resolver},
-    types::{SqliteTable, ToGraphQL},
-};
+use crate::{resolvers::list_resolver, types::SqliteTable};
 
 mod resolvers;
 mod types;
 
 async fn graphiql() -> impl IntoResponse {
     Html(GraphiQLSource::build().endpoint("/").finish())
-}
-
-#[derive(Debug, Default)]
-struct Query;
-
-#[Object]
-impl Query {
-    async fn hello(&self) -> &str {
-        "Hello, world!"
-    }
 }
 
 #[tokio::main]
@@ -49,11 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let mut table_objects = vec![];
 
     for table in tables {
-        let mut table_obj = Object::new(table.table_info.name.clone());
-
-        for col in table.column_info.clone() {
-            table_obj = table_obj.field(col.to_field(table.table_info.name.clone()));
-        }
+        let table_obj = table.to_graphql_object();
 
         query_object = query_object.field(Field::new(
             table.table_info.name.clone(),
