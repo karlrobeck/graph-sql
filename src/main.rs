@@ -1,6 +1,6 @@
 use async_graphql::{
-    EmptyMutation, EmptySubscription, Object, Value,
-    dynamic::{Field, FieldFuture, Object, Schema, TypeRef},
+    Object,
+    dynamic::{Field, Object, Schema, TypeRef},
     http::GraphiQLSource,
 };
 use async_graphql_axum::GraphQL;
@@ -8,12 +8,12 @@ use axum::{
     Router,
     response::{Html, IntoResponse},
 };
-use sqlx::{SqlitePool, prelude::FromRow};
+use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 
 use crate::{
-    resolvers::{column_resolver, id_resolver, list_resolver},
-    types::{SqliteTable, create_graphql_type_ref},
+    resolvers::{column_resolver, list_resolver},
+    types::{SqliteTable, ToGraphQL},
 };
 
 mod resolvers;
@@ -52,16 +52,7 @@ async fn main() -> anyhow::Result<()> {
         let mut table_obj = Object::new(table.table_info.name.clone());
 
         for col in table.column_info.clone() {
-            let col_name = col.name.clone();
-            let table_name = table.table_info.name.clone();
-
-            let field = Field::new(
-                col_name.clone(),
-                create_graphql_type_ref(&col),
-                move |ctx| column_resolver(table_name.clone(), &col, &ctx),
-            );
-
-            table_obj = table_obj.field(field);
+            table_obj = table_obj.field(col.to_field(table.table_info.name.clone()));
         }
 
         query_object = query_object.field(Field::new(

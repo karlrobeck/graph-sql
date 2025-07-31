@@ -1,10 +1,13 @@
-use async_graphql::dynamic::TypeRef;
+use async_graphql::dynamic::{Field, TypeRef};
+use sea_query::{Alias, ColumnDef, ColumnType};
 use sqlx::{SqlitePool, prelude::FromRow};
+
+use crate::resolvers::column_resolver;
 
 #[derive(Debug)]
 pub struct SqliteTable {
     pub table_info: TableInfo,
-    pub column_info: Vec<ColumnInfo>,
+    pub column_info: Vec<ColumnDef>,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -42,7 +45,30 @@ impl SqliteTable {
             )
             .bind(&table.name)
             .fetch_all(db)
-            .await?;
+            .await?
+            .into_iter()
+            .map(|col| {
+                let mut col_def = ColumnDef::new(Alias::new(col.name));
+
+                match col.r#type.as_str() {
+                    "TEXT" => col_def.text(),
+                    "REAL" => col_def.float(),
+                    "BLOB" => col_def.blob(),
+                    "BOOLEAN" => col_def.boolean(),
+                    _ => col_def.text(),
+                };
+
+                if col.notnull == 1 {
+                    col_def.not_null();
+                }
+
+                if col.pk == 1 {
+                    col_def.primary_key();
+                }
+
+                col_def
+            })
+            .collect::<Vec<_>>();
 
             sqlite_tables.push(SqliteTable {
                 table_info: table,
@@ -54,21 +80,39 @@ impl SqliteTable {
     }
 }
 
-pub fn create_graphql_type_ref(column: &ColumnInfo) -> TypeRef {
-    let type_name = match column.r#type.as_str() {
-        "INTEGER" => TypeRef::INT,
-        "TEXT" => TypeRef::STRING,
-        "REAL" => TypeRef::FLOAT,
-        "BLOB" => TypeRef::STRING,
-        _ => TypeRef::STRING,
-    };
-
-    match column.notnull {
-        1 => TypeRef::named_nn(type_name),
-        _ => TypeRef::named(type_name),
-    }
+pub trait ToGraphQL {
+    fn to_type_ref(&self) -> TypeRef;
+    fn to_field(&self, table_name: String) -> Field;
 }
 
-pub fn create_graphql_field(col: &ColumnInfo) {
-    let name = col.name.clone();
+impl ToGraphQL for ColumnDef {
+    fn to_type_ref(&self) -> TypeRef {
+        let type_name = match self.get_column_type().unwrap() {
+            ColumnType::Text => TypeRef::STRING,
+            ColumnType::Float => TypeRef::FLOAT,
+            ColumnType::Blob => TypeRef::STRING,
+            ColumnType::Boolean => TypeRef::BOOLEAN,
+            _ => TypeRef::STRING,
+        };
+
+        if self
+            .get_column_spec()
+            .iter()
+            .find(|spec| matches!(spec, sea_query::ColumnSpec::NotNull))
+            .is_some()
+        {
+            TypeRef::named_nn(type_name)
+        } else {
+            TypeRef::named(type_name)
+        }
+    }
+    fn to_field(&self, table_name: String) -> Field {
+        let column_name = self.get_column_name().to_string();
+        let column_def = self.clone();
+        let table_name = table_name.clone();
+
+        Field::new(&column_name, self.to_type_ref(), move |ctx| {
+            column_resolver(table_name.clone(), &column_def, &ctx)
+        })
+    }
 }

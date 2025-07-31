@@ -1,14 +1,11 @@
 use async_graphql::{
     Value,
-    dynamic::{FieldFuture, FieldValue, ResolverContext},
+    dynamic::{FieldFuture, ResolverContext},
 };
+use sea_query::ColumnDef;
 use sqlx::SqlitePool;
 
-use crate::types::{ColumnInfo, SqliteTable};
-
-pub fn id_resolver<'a>(ctx: &ResolverContext<'_>) -> FieldFuture<'a> {
-    FieldFuture::new(async move { Ok(Some(Value::from("resolved_id_value"))) })
-}
+use crate::types::SqliteTable;
 
 pub fn list_resolver<'a>(table_info: &SqliteTable, ctx: &ResolverContext<'a>) -> FieldFuture<'a> {
     let db = ctx.data::<SqlitePool>().unwrap();
@@ -16,7 +13,12 @@ pub fn list_resolver<'a>(table_info: &SqliteTable, ctx: &ResolverContext<'a>) ->
     let pk_col = table_info
         .column_info
         .iter()
-        .find(|col| col.pk == 1)
+        .find(|col| {
+            col.get_column_spec()
+                .iter()
+                .find(|spec| matches!(spec, sea_query::ColumnSpec::PrimaryKey))
+                .is_some()
+        })
         .unwrap()
         .to_owned();
 
@@ -25,7 +27,8 @@ pub fn list_resolver<'a>(table_info: &SqliteTable, ctx: &ResolverContext<'a>) ->
             r#"
               select {} from {};
             "#,
-            pk_col.name, table_name
+            pk_col.get_column_name(),
+            table_name
         ))
         .fetch_all(db)
         .await?
@@ -39,7 +42,7 @@ pub fn list_resolver<'a>(table_info: &SqliteTable, ctx: &ResolverContext<'a>) ->
 
 pub fn column_resolver<'a>(
     table_name: String,
-    col: &ColumnInfo,
+    col: &ColumnDef,
     ctx: &ResolverContext<'a>,
 ) -> FieldFuture<'a> {
     let col = col.to_owned();
@@ -55,13 +58,15 @@ pub fn column_resolver<'a>(
     FieldFuture::new(async move {
         let value = sqlx::query_as::<_, (serde_json::Value,)>(&format!(
             "select json_object('{}',{}) from {} where id = ?",
-            col.name, col.name, table_name
+            col.get_column_name(),
+            col.get_column_name(),
+            table_name
         ))
         .bind(id)
         .fetch_one(&db)
         .await
         .map(|(map_val,)| map_val.as_object().unwrap().clone())
-        .map(|val| val.get(&col.name).unwrap().clone())?;
+        .map(|val| val.get(&col.get_column_name()).unwrap().clone())?;
 
         Ok(Some(Value::from_json(value).unwrap()))
     })
