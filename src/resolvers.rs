@@ -3,41 +3,44 @@ use async_graphql::{
     dynamic::{FieldFuture, ResolverContext},
 };
 use sea_query::{
-    Alias, ColumnDef, ColumnSpec, ColumnType, Expr, Func, Query, QueryStatementWriter, SimpleExpr,
-    SqliteQueryBuilder,
+    Alias, ColumnDef, ColumnSpec, ColumnType, Expr, Query, SimpleExpr, SqliteQueryBuilder,
 };
 use sqlx::SqlitePool;
 
-use crate::types::{SqliteTable, ToGraphQL};
+use crate::types::SqliteTable;
 
-pub fn list_resolver<'a>(table_info: &SqliteTable, ctx: &ResolverContext<'a>) -> FieldFuture<'a> {
-    let db = ctx.data::<SqlitePool>().unwrap();
-    let table_name = table_info.table_info.name.clone().to_owned();
-    let pk_col = table_info
-        .column_info
-        .iter()
-        .find(|col| {
-            col.get_column_spec()
-                .iter()
-                .find(|spec| matches!(spec, sea_query::ColumnSpec::PrimaryKey))
-                .is_some()
-        })
-        .unwrap()
-        .to_owned();
-
+pub fn list_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
     FieldFuture::new(async move {
-        let result = sqlx::query_as::<_, (i64,)>(&format!(
-            r#"
-              select {} from {};
-            "#,
-            pk_col.get_column_name(),
-            table_name
-        ))
-        .fetch_all(db)
-        .await?
-        .into_iter()
-        .map(|(val,)| val.into())
-        .collect::<Vec<_>>();
+        let db = ctx.data::<SqlitePool>()?;
+        let table_name = table_info.table_info.name.clone().to_owned();
+        let pk_col = table_info
+            .column_info
+            .iter()
+            .find(|col| {
+                col.get_column_spec()
+                    .iter()
+                    .find(|spec| matches!(spec, sea_query::ColumnSpec::PrimaryKey))
+                    .is_some()
+            })
+            .ok_or(anyhow::anyhow!("Unable to get primary key"))?;
+
+        let query = Query::select()
+            .from(Alias::new(table_name))
+            .column(Alias::new(pk_col.get_column_name()))
+            .to_string(SqliteQueryBuilder);
+
+        let result = sqlx::query_as::<_, (i64,)>(&query)
+            .fetch_all(db)
+            .await?
+            .into_iter()
+            .map(|(val,)| {
+                serde_json::json!({
+                  "name":pk_col.get_column_name(),
+                  "id":val,
+                })
+            })
+            .map(|val| Value::from_json(val).unwrap())
+            .collect::<Vec<_>>();
 
         Ok(Some(Value::List(result)))
     })
@@ -45,33 +48,57 @@ pub fn list_resolver<'a>(table_info: &SqliteTable, ctx: &ResolverContext<'a>) ->
 
 pub fn column_resolver<'a>(
     table_name: String,
-    col: &ColumnDef,
-    ctx: &ResolverContext<'a>,
+    col: ColumnDef,
+    ctx: ResolverContext<'a>,
 ) -> FieldFuture<'a> {
-    let col = col.to_owned();
-
-    let db = ctx.data::<SqlitePool>().unwrap().to_owned();
-
-    let val = ctx.parent_value.as_value().unwrap().clone();
-
-    let val = val.into_json().unwrap();
-
-    let id = val.as_i64().unwrap();
-
     FieldFuture::new(async move {
-        let value = sqlx::query_as::<_, (serde_json::Value,)>(&format!(
-            "select json_object('{}',{}) from {} where id = ?",
-            col.get_column_name(),
-            col.get_column_name(),
-            table_name
-        ))
-        .bind(id)
-        .fetch_one(&db)
-        .await
-        .map(|(map_val,)| map_val.as_object().unwrap().clone())
-        .map(|val| val.get(&col.get_column_name()).unwrap().clone())?;
+        let db = ctx.data::<SqlitePool>()?;
 
-        Ok(Some(Value::from_json(value)?))
+        let col = col.to_owned();
+
+        let parent_value = ctx
+            .parent_value
+            .as_value()
+            .ok_or(anyhow::anyhow!("Unable to get parent value"))?
+            .clone();
+
+        let parent_value = parent_value.into_json()?;
+
+        let json_object = parent_value
+            .as_object()
+            .ok_or(anyhow::anyhow!("Unable to get json object"))?;
+
+        let pk_name = json_object
+            .get("name")
+            .map(|val| val.as_str())
+            .ok_or(anyhow::anyhow!("Unable to get primary key column name"))?
+            .ok_or(anyhow::anyhow!("Unable to cast column name as str"))?;
+
+        let pk_id = json_object
+            .get("id")
+            .map(|v| v.as_i64())
+            .ok_or(anyhow::anyhow!("Unable to get primary key id"))?
+            .ok_or(anyhow::anyhow!("Unable to cast id into i64"))?;
+
+        let query = Query::select()
+            .from(Alias::new(table_name))
+            .expr(Expr::cust_with_values(
+                format!("json_object(?,{})", col.get_column_name()),
+                [col.get_column_name()],
+            ))
+            .and_where(Expr::col(Alias::new(pk_name)).eq(pk_id))
+            .to_string(SqliteQueryBuilder);
+
+        println!("{}", query);
+
+        let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
+            .fetch_one(db)
+            .await
+            .map(|(map_val,)| map_val.as_object().unwrap().clone())
+            .map(|val| val.get(&col.get_column_name()).unwrap().clone())
+            .map(|val| Value::from_json(val))??;
+
+        Ok(Some(result))
     })
 }
 
@@ -96,9 +123,9 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
                 .column_info
                 .iter()
                 .find(|col| col.get_column_name() == *key)
-                .unwrap()
+                .ok_or(anyhow::anyhow!("Unable to get column"))?
                 .get_column_type()
-                .unwrap();
+                .ok_or(anyhow::anyhow!("Unable to get column type"))?;
 
             let val = match col_type {
                 ColumnType::Text => val.string().map(|val| Into::<SimpleExpr>::into(val)),

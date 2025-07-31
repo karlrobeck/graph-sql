@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use async_graphql::{
     dynamic::{Field, Object, Schema, TypeRef},
     http::GraphiQLSource,
@@ -50,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
         query_object = query_object.field(Field::new(
             table.table_info.name.clone(),
             TypeRef::named_list(table_obj.type_name()),
-            move |ctx| list_resolver(&table, &ctx),
+            move |ctx| list_resolver(table.clone(), ctx),
         ));
 
         table_objects.push(table_obj);

@@ -155,7 +155,7 @@ impl ToGraphQL for ColumnDef {
         let table_name = table_name.clone();
 
         Field::new(&column_name, self.to_type_ref(), move |ctx| {
-            column_resolver(table_name.clone(), &column_def, &ctx)
+            column_resolver(table_name.clone(), column_def.clone(), ctx)
         })
     }
 
