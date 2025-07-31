@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use async_graphql::{
     dynamic::{Field, Object, Schema, TypeRef},
     http::GraphiQLSource,
@@ -31,11 +33,19 @@ async fn main() -> anyhow::Result<()> {
     let tables = SqliteTable::introspect(&db).await?;
 
     let mut query_object = Object::new("Query");
+    let mut mutation_object = Object::new("Mutation");
 
     let mut table_objects = vec![];
+    let mut inputs = vec![];
 
     for table in tables {
         let table_obj = table.to_graphql_object();
+
+        let insert_mutation = table.to_graphql_insert_mutation();
+
+        mutation_object = mutation_object.field(insert_mutation.1);
+
+        inputs.push(insert_mutation.0);
 
         query_object = query_object.field(Field::new(
             table.table_info.name.clone(),
@@ -46,10 +56,20 @@ async fn main() -> anyhow::Result<()> {
         table_objects.push(table_obj);
     }
 
-    let mut schema = Schema::build(query_object.type_name(), None, None).register(query_object);
+    let mut schema = Schema::build(
+        query_object.type_name(),
+        Some(mutation_object.type_name()),
+        None,
+    )
+    .register(query_object)
+    .register(mutation_object);
 
     for object in table_objects {
         schema = schema.register(object);
+    }
+
+    for input in inputs {
+        schema = schema.register(input);
     }
 
     let schema = schema.data(db).finish()?;

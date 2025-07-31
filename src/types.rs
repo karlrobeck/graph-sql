@@ -1,10 +1,10 @@
-use async_graphql::dynamic::{Field, Object, TypeRef};
-use sea_query::{Alias, ColumnDef, ColumnType};
+use async_graphql::dynamic::{Field, InputObject, InputValue, Object, TypeRef};
+use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType};
 use sqlx::{SqlitePool, prelude::FromRow};
 
-use crate::resolvers::column_resolver;
+use crate::resolvers::{column_resolver, insert_resolver};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SqliteTable {
     pub table_info: TableInfo,
     pub column_info: Vec<ColumnDef>,
@@ -21,12 +21,13 @@ pub struct ColumnInfo {
     pub r#type: String,
     pub notnull: i16,
     pub pk: i16,
+    pub dflt_value: Option<String>,
 }
 
 impl SqliteTable {
     pub async fn introspect(db: &SqlitePool) -> anyhow::Result<Vec<Self>> {
         let tables = sqlx::query_as::<_, TableInfo>(
-            "SELECT name FROM sqlite_master WHERE type='table' and name not in  ('_sqlx_migrations','sqlite_sequence')",
+            "SELECT name,sql FROM sqlite_master WHERE type='table' and name not in  ('_sqlx_migrations','sqlite_sequence')",
         )
         .fetch_all(db)
         .await?;
@@ -40,7 +41,7 @@ impl SqliteTable {
         for table in tables {
             let columns = sqlx::query_as::<_, ColumnInfo>(
                 r#"
-              select name,type,"notnull",pk from pragma_table_info(?)
+              select name,type,"notnull",pk,dflt_value from pragma_table_info(?)
             "#,
             )
             .bind(&table.name)
@@ -50,11 +51,12 @@ impl SqliteTable {
             .map(|col| {
                 let mut col_def = ColumnDef::new(Alias::new(col.name));
 
-                match col.r#type.as_str() {
-                    "TEXT" => col_def.text(),
-                    "REAL" => col_def.float(),
-                    "BLOB" => col_def.blob(),
-                    "BOOLEAN" => col_def.boolean(),
+                match col.r#type.to_lowercase().as_str() {
+                    "text" => col_def.text(),
+                    "real" | "numeric" => col_def.float(),
+                    "blob" => col_def.blob(),
+                    "boolean" => col_def.boolean(),
+                    "integer" => col_def.integer(),
                     _ => col_def.text(),
                 };
 
@@ -64,6 +66,10 @@ impl SqliteTable {
 
                 if col.pk == 1 {
                     col_def.primary_key();
+                }
+
+                if col.dflt_value.is_some() {
+                    col_def.default("");
                 }
 
                 col_def
@@ -90,11 +96,33 @@ impl SqliteTable {
 
         table_obj
     }
+
+    pub fn to_graphql_insert_mutation(&self) -> (InputObject, Field) {
+        let mut input = InputObject::new(format!("insert_{}_input", self.table_info.name));
+
+        for col in self.column_info.iter() {
+            input = input.field(col.to_input_value());
+        }
+
+        let table_clone = self.clone();
+        let insert_mutation_field = Field::new(
+            format!("insert_{}", table_clone.table_info.name),
+            TypeRef::named_nn(table_clone.table_info.name.clone()),
+            move |ctx| insert_resolver(table_clone.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        (input, insert_mutation_field)
+    }
 }
 
 pub trait ToGraphQL {
     fn to_type_ref(&self) -> TypeRef;
     fn to_field(&self, table_name: String) -> Field;
+    fn to_input_value(&self) -> InputValue;
 }
 
 impl ToGraphQL for ColumnDef {
@@ -103,14 +131,17 @@ impl ToGraphQL for ColumnDef {
             ColumnType::Text => TypeRef::STRING,
             ColumnType::Float => TypeRef::FLOAT,
             ColumnType::Blob => TypeRef::STRING,
-            ColumnType::Boolean => TypeRef::BOOLEAN,
+            ColumnType::Integer | ColumnType::Boolean => TypeRef::INT,
             _ => TypeRef::STRING,
         };
 
         if self
             .get_column_spec()
             .iter()
-            .find(|spec| matches!(spec, sea_query::ColumnSpec::NotNull))
+            .find(|spec| {
+                matches!(spec, sea_query::ColumnSpec::NotNull)
+                    || !matches!(spec, ColumnSpec::Default(_))
+            })
             .is_some()
         {
             TypeRef::named_nn(type_name)
@@ -126,5 +157,31 @@ impl ToGraphQL for ColumnDef {
         Field::new(&column_name, self.to_type_ref(), move |ctx| {
             column_resolver(table_name.clone(), &column_def, &ctx)
         })
+    }
+
+    fn to_input_value(&self) -> InputValue {
+        let type_name = match self.get_column_type().unwrap() {
+            ColumnType::Text => TypeRef::STRING,
+            ColumnType::Float => TypeRef::FLOAT,
+            ColumnType::Blob => TypeRef::STRING,
+            ColumnType::Integer | ColumnType::Boolean => TypeRef::INT,
+            _ => TypeRef::STRING,
+        };
+
+        let mut specs = self.get_column_spec().iter();
+
+        let is_not_null = specs
+            .find(|spec| matches!(spec, ColumnSpec::NotNull))
+            .is_some();
+
+        let has_default_val = specs
+            .find(|spec| matches!(spec, ColumnSpec::Default(_)))
+            .is_some();
+
+        if is_not_null && !has_default_val {
+            InputValue::new(self.get_column_name(), TypeRef::named_nn(type_name))
+        } else {
+            InputValue::new(self.get_column_name(), TypeRef::named(type_name))
+        }
     }
 }

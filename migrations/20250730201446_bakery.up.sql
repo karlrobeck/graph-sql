@@ -1,8 +1,8 @@
 CREATE TABLE cake(
-  id integer NOT NULL PRIMARY KEY AUTOINCREMENT,
+  id integer PRIMARY KEY AUTOINCREMENT,
   name text NOT NULL,
   price real,
-  is_vegan integer, -- BOOLEAN stored as INTEGER (0/1)
+  is_vegan boolean, -- BOOLEAN stored as INTEGER (0/1)
   created_at text, -- DATETIME stored as TEXT (ISO8601)
   description text,
   image BLOB,
@@ -10,7 +10,7 @@ CREATE TABLE cake(
 );
 
 CREATE TABLE filling(
-  id integer NOT NULL PRIMARY KEY AUTOINCREMENT,
+  id integer PRIMARY KEY AUTOINCREMENT,
   name text NOT NULL,
   calories integer,
   fat real,
@@ -19,11 +19,11 @@ CREATE TABLE filling(
 );
 
 CREATE TABLE fruit(
-  id integer NOT NULL PRIMARY KEY AUTOINCREMENT,
+  id integer PRIMARY KEY AUTOINCREMENT,
   name text NOT NULL,
   cake_id integer NOT NULL REFERENCES cake(id) ON DELETE CASCADE,
   weight real,
-  is_fresh integer, -- BOOLEAN stored as INTEGER (0/1)
+  is_fresh boolean, -- BOOLEAN stored as INTEGER (0/1)
   picked_at text, -- DATETIME stored as TEXT (ISO8601)
   color text
 );
