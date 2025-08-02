@@ -101,12 +101,7 @@ impl SqliteTable {
     pub fn to_graphql_list_query(self) -> Object {
         let table_name = self.table_info.name.clone();
 
-        Object::new(format!(
-            "{}{}",
-            table_name.chars().next().unwrap().to_uppercase(),
-            &table_name[1..]
-        ))
-        .field(Field::new(
+        Object::new(table_name.clone()).field(Field::new(
             "list",
             TypeRef::named_list(format!("{}_node", table_name)),
             move |ctx| list_resolver(self.clone(), ctx),
