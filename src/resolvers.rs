@@ -45,8 +45,6 @@ pub fn column_resolver<'a>(
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
 
-        let col = col.to_owned();
-
         let parent_value = ctx
             .parent_value
             .as_value()
@@ -85,9 +83,9 @@ pub fn column_resolver<'a>(
             .await
             .map(|(map_val,)| map_val.as_object().unwrap().clone())
             .map(|val| val.get(&col.get_column_name()).unwrap().clone())
-            .map(|val| Value::from_json(val))??;
+            .map(|val| Value::from_json(val))?;
 
-        Ok(Some(result))
+        Ok(Some(result?))
     })
 }
 
@@ -146,7 +144,7 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
                 })
             })?;
 
-        Ok(Some(Value::from_json(result).unwrap()))
+        Ok(Some(Value::from_json(result)?))
     })
 }
 
@@ -160,9 +158,7 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
 
         let id = ctx.args.try_get("id")?.i64()?;
 
-        let input = ctx.args.try_get("input")?;
-
-        let input = input.object()?;
+        let input = ctx.args.try_get("input")?.object()?;
 
         let mut binding = Query::update();
 
@@ -171,6 +167,7 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
 
         // Collect columns and values to update
         let mut values = vec![];
+
         for (key, val) in input.iter() {
             let col_type = table
                 .column_info
@@ -189,21 +186,8 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
         // Add WHERE clause for primary key
         query = query.and_where(Expr::col(Alias::new(pk_col.get_column_name())).eq(id));
 
-        let query = query.returning(
-            Query::returning().column(
-                table
-                    .column_info
-                    .iter()
-                    .find(|col| {
-                        col.get_column_spec()
-                            .iter()
-                            .find(|spec| matches!(spec, ColumnSpec::PrimaryKey))
-                            .is_some()
-                    })
-                    .map(|col| Alias::new(col.get_column_name()))
-                    .unwrap(),
-            ),
-        );
+        let query =
+            query.returning(Query::returning().column(Alias::new(pk_col.get_column_name())));
 
         let query = query.to_string(SqliteQueryBuilder);
 
@@ -217,6 +201,6 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
                 })
             })?;
 
-        Ok(Some(Value::from_json(result).unwrap()))
+        Ok(Some(Value::from_json(result)?))
     })
 }
