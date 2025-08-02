@@ -3,7 +3,9 @@ use async_graphql::dynamic::{Field, InputObject, InputValue, Object, TypeRef, Va
 use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, SimpleExpr};
 use sqlx::{SqlitePool, prelude::FromRow};
 
-use crate::resolvers::{column_resolver, insert_resolver, list_resolver, update_resolver};
+use crate::resolvers::{
+    column_resolver, insert_resolver, list_resolver, update_resolver, view_resolver,
+};
 
 #[derive(Debug, Clone)]
 pub struct SqliteTable {
@@ -98,16 +100,28 @@ impl SqliteTable {
         node_obj
     }
 
-    pub fn to_graphql_list_query(&self) -> Object {
+    pub fn to_graphql_list_query(&self) -> Field {
         let table_name = self.table_info.name.clone();
 
         let table = self.clone();
 
-        Object::new(table_name.clone()).field(Field::new(
+        Field::new(
             "list",
             TypeRef::named_list(format!("{}_node", table_name)),
             move |ctx| list_resolver(table.clone(), ctx),
-        ))
+        )
+    }
+
+    pub fn to_graphql_view_query(&self) -> Field {
+        let table_name = self.table_info.name.clone();
+
+        let table = self.clone();
+
+        Field::new(
+            "view",
+            TypeRef::named(format!("{}_node", table_name)),
+            move |ctx| view_resolver(table.clone(), ctx),
+        ).argument(InputValue::new("id", TypeRef::named_nn(TypeRef::INT)))
     }
 
     pub fn to_graphql_insert_mutation(&self) -> (InputObject, Field) {

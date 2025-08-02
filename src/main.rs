@@ -44,7 +44,10 @@ async fn main() -> anyhow::Result<()> {
 
         let insert_mutation = table.to_graphql_insert_mutation();
         let update_mutation = table.to_graphql_update_mutation();
-        let list_query = table.to_graphql_list_query();
+
+        let table_obj = table_obj
+            .field(table.to_graphql_list_query())
+            .field(table.to_graphql_view_query());
 
         mutation_object = mutation_object
             .field(insert_mutation.1)
@@ -55,12 +58,11 @@ async fn main() -> anyhow::Result<()> {
 
         query_object = query_object.field(Field::new(
             name.to_string(),
-            TypeRef::named_nn(list_query.type_name()),
+            TypeRef::named_nn(table_obj.type_name()),
             |_| FieldFuture::new(async move { Ok(Some(Value::from(""))) }),
         ));
 
         table_objects.push(table_obj);
-        table_objects.push(list_query);
     }
 
     let mut schema = Schema::build(
