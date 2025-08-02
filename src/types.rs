@@ -3,7 +3,7 @@ use async_graphql::dynamic::{Field, InputObject, InputValue, Object, TypeRef, Va
 use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, SimpleExpr};
 use sqlx::{SqlitePool, prelude::FromRow};
 
-use crate::resolvers::{column_resolver, insert_resolver, update_resolver};
+use crate::resolvers::{column_resolver, insert_resolver, list_resolver, update_resolver};
 
 #[derive(Debug, Clone)]
 pub struct SqliteTable {
@@ -86,16 +86,31 @@ impl SqliteTable {
         Ok(sqlite_tables)
     }
 
-    pub fn to_graphql_object(&self) -> Object {
+    pub fn to_graphql_node(&self) -> Object {
         let table_name = self.table_info.name.clone();
 
-        let mut table_obj = Object::new(table_name.clone());
+        let mut node_obj = Object::new(format!("{}_node", table_name.clone()));
 
         for col in self.column_info.clone() {
-            table_obj = table_obj.field(col.graphql_field(table_name.clone()));
+            node_obj = node_obj.field(col.graphql_field(table_name.clone()));
         }
 
-        table_obj
+        node_obj
+    }
+
+    pub fn to_graphql_list_query(self) -> Object {
+        let table_name = self.table_info.name.clone();
+
+        Object::new(format!(
+            "{}{}",
+            table_name.chars().next().unwrap().to_uppercase(),
+            &table_name[1..]
+        ))
+        .field(Field::new(
+            "list",
+            TypeRef::named_list(format!("{}_node", table_name)),
+            move |ctx| list_resolver(self.clone(), ctx),
+        ))
     }
 
     pub fn to_graphql_insert_mutation(&self) -> (InputObject, Field) {
@@ -108,7 +123,7 @@ impl SqliteTable {
         let table_clone = self.clone();
         let insert_mutation_field = Field::new(
             format!("insert_{}", table_clone.table_info.name),
-            TypeRef::named_nn(table_clone.table_info.name.clone()),
+            TypeRef::named_nn(format!("{}_node", table_clone.table_info.name.clone())),
             move |ctx| insert_resolver(table_clone.clone(), ctx),
         )
         .argument(InputValue::new(
@@ -141,7 +156,7 @@ impl SqliteTable {
         let table_clone = self.clone();
         let insert_mutation_field = Field::new(
             format!("update_{}", table_clone.table_info.name),
-            TypeRef::named_nn(table_clone.table_info.name.clone()),
+            TypeRef::named_nn(format!("{}_node", table_clone.table_info.name.clone())),
             move |ctx| update_resolver(table_clone.clone(), ctx),
         )
         .argument(pk_input)

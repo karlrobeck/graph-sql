@@ -2,9 +2,7 @@ use async_graphql::{
     Value,
     dynamic::{FieldFuture, ResolverContext},
 };
-use sea_query::{
-    Alias, ColumnDef, ColumnSpec, ColumnType, Expr, Query, SimpleExpr, SqliteQueryBuilder,
-};
+use sea_query::{Alias, ColumnDef, ColumnSpec, Expr, Query, SqliteQueryBuilder};
 use sqlx::SqlitePool;
 
 use crate::types::{SqliteTable, ToSeaQueryValue};

@@ -1,5 +1,6 @@
 use async_graphql::{
-    dynamic::{Field, Object, Schema, TypeRef},
+    Value,
+    dynamic::{Field, FieldFuture, FieldValue, Object, Schema, TypeRef},
     http::GraphiQLSource,
 };
 use async_graphql_axum::GraphQL;
@@ -7,6 +8,7 @@ use axum::{
     Router,
     response::{Html, IntoResponse},
 };
+use sea_query::Iden;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 
@@ -37,10 +39,12 @@ async fn main() -> anyhow::Result<()> {
     let mut inputs = vec![];
 
     for table in tables {
-        let table_obj = table.to_graphql_object();
+        let table_obj = table.to_graphql_node();
+        let name = table.table_name();
 
         let insert_mutation = table.to_graphql_insert_mutation();
         let update_mutation = table.to_graphql_update_mutation();
+        let list_query = table.to_graphql_list_query();
 
         mutation_object = mutation_object
             .field(insert_mutation.1)
@@ -50,12 +54,13 @@ async fn main() -> anyhow::Result<()> {
         inputs.push(update_mutation.0);
 
         query_object = query_object.field(Field::new(
-            table.table_info.name.clone(),
-            TypeRef::named_list(table_obj.type_name()),
-            move |ctx| list_resolver(table.clone(), ctx),
+            name.to_string(),
+            TypeRef::named_nn(list_query.type_name()),
+            |_| FieldFuture::new(async move { Ok(Some(Value::from(""))) }),
         ));
 
         table_objects.push(table_obj);
+        table_objects.push(list_query);
     }
 
     let mut schema = Schema::build(
