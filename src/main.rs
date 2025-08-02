@@ -40,10 +40,14 @@ async fn main() -> anyhow::Result<()> {
         let table_obj = table.to_graphql_object();
 
         let insert_mutation = table.to_graphql_insert_mutation();
+        let update_mutation = table.to_graphql_update_mutation();
 
-        mutation_object = mutation_object.field(insert_mutation.1);
+        mutation_object = mutation_object
+            .field(insert_mutation.1)
+            .field(update_mutation.1);
 
         inputs.push(insert_mutation.0);
+        inputs.push(update_mutation.0);
 
         query_object = query_object.field(Field::new(
             table.table_info.name.clone(),

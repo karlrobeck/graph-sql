@@ -3,7 +3,8 @@ use async_graphql::{
     dynamic::{FieldFuture, ResolverContext},
 };
 use sea_query::{
-    Alias, ColumnDef, ColumnSpec, ColumnType, Expr, Query, SimpleExpr, SqliteQueryBuilder,
+    Alias, ColumnDef, ColumnSpec, ColumnType, Expr, Query, QueryStatementWriter, SimpleExpr,
+    SqliteQueryBuilder,
 };
 use sqlx::SqlitePool;
 
@@ -155,6 +156,88 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
         );
 
         let query = query.values(values)?.to_string(SqliteQueryBuilder);
+
+        let result = sqlx::query_as::<_, (i64,)>(&query)
+            .fetch_one(db)
+            .await
+            .map(|(val,)| val.into())?;
+
+        Ok(Some(Value::Number(result)))
+    })
+}
+
+pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
+    FieldFuture::new(async move {
+        let db = ctx.data::<SqlitePool>()?;
+
+        let id = ctx.args.try_get("id")?.i64()?;
+
+        let input = ctx.args.try_get("input")?;
+
+        let input = input.object()?;
+
+        let mut binding = Query::update();
+
+        // Find the primary key column name
+        let pk_col = table
+            .column_info
+            .iter()
+            .find(|col| {
+                col.get_column_spec()
+                    .iter()
+                    .find(|spec| matches!(spec, ColumnSpec::PrimaryKey))
+                    .is_some()
+            })
+            .ok_or(anyhow::anyhow!("Unable to get primary key"))?;
+
+        // Build the update query
+        let mut query = binding.table(Alias::new(table.table_info.name));
+
+        // Collect columns and values to update
+        let mut values = vec![];
+        for (key, val) in input.iter() {
+            let col_type = table
+                .column_info
+                .iter()
+                .find(|col| col.get_column_name() == *key)
+                .ok_or(anyhow::anyhow!("Unable to get column"))?
+                .get_column_type()
+                .ok_or(anyhow::anyhow!("Unable to get column type"))?;
+
+            let val = match col_type {
+                ColumnType::Text => val.string().map(|val| Into::<SimpleExpr>::into(val)),
+                ColumnType::Integer => val.i64().map(|val| Into::<SimpleExpr>::into(val)),
+                ColumnType::Boolean => val.boolean().map(|val| Into::<SimpleExpr>::into(val)),
+                ColumnType::Float => val.f64().map(|val| Into::<SimpleExpr>::into(val)),
+                _ => val.string().map(|val| Into::<SimpleExpr>::into(val)),
+            };
+
+            values.push((Alias::new(key.to_string()), val?));
+        }
+
+        // Set values to update
+        query = query.values(values);
+
+        // Add WHERE clause for primary key
+        query = query.and_where(Expr::col(Alias::new(pk_col.get_column_name())).eq(id));
+
+        let query = query.returning(
+            Query::returning().column(
+                table
+                    .column_info
+                    .iter()
+                    .find(|col| {
+                        col.get_column_spec()
+                            .iter()
+                            .find(|spec| matches!(spec, ColumnSpec::PrimaryKey))
+                            .is_some()
+                    })
+                    .map(|col| Alias::new(col.get_column_name()))
+                    .unwrap(),
+            ),
+        );
+
+        let query = query.to_string(SqliteQueryBuilder);
 
         let result = sqlx::query_as::<_, (i64,)>(&query)
             .fetch_one(db)
