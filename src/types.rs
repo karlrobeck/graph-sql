@@ -1,3 +1,4 @@
+use anyhow::Result;
 use async_graphql::dynamic::{Field, InputObject, InputValue, Object, TypeRef};
 use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType};
 use sqlx::{SqlitePool, prelude::FromRow};
@@ -150,6 +151,23 @@ impl SqliteTable {
         ));
 
         (input, insert_mutation_field)
+    }
+
+    // helpers
+    pub fn primary_key(&self) -> Result<&ColumnDef> {
+        self.column_info
+            .iter()
+            .find(|col| {
+                col.get_column_spec()
+                    .iter()
+                    .find(|spec| matches!(spec, sea_query::ColumnSpec::PrimaryKey))
+                    .is_some()
+            })
+            .ok_or(anyhow::anyhow!("Unable to get primary key"))
+    }
+
+    pub fn table_name(&self) -> Alias {
+        Alias::new(self.table_info.name.clone())
     }
 }
 

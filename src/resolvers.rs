@@ -3,8 +3,7 @@ use async_graphql::{
     dynamic::{FieldFuture, ResolverContext},
 };
 use sea_query::{
-    Alias, ColumnDef, ColumnSpec, ColumnType, Expr, Query, QueryStatementWriter, SimpleExpr,
-    SqliteQueryBuilder,
+    Alias, ColumnDef, ColumnSpec, ColumnType, Expr, Query, SimpleExpr, SqliteQueryBuilder,
 };
 use sqlx::SqlitePool;
 
@@ -13,20 +12,11 @@ use crate::types::SqliteTable;
 pub fn list_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
-        let table_name = table_info.table_info.name.clone().to_owned();
-        let pk_col = table_info
-            .column_info
-            .iter()
-            .find(|col| {
-                col.get_column_spec()
-                    .iter()
-                    .find(|spec| matches!(spec, sea_query::ColumnSpec::PrimaryKey))
-                    .is_some()
-            })
-            .ok_or(anyhow::anyhow!("Unable to get primary key"))?;
+        let table_name = table_info.table_name();
+        let pk_col = table_info.primary_key()?;
 
         let query = Query::select()
-            .from(Alias::new(table_name))
+            .from(table_name)
             .column(Alias::new(pk_col.get_column_name()))
             .to_string(SqliteQueryBuilder);
 
@@ -90,8 +80,6 @@ pub fn column_resolver<'a>(
             .and_where(Expr::col(Alias::new(pk_name)).eq(pk_id))
             .to_string(SqliteQueryBuilder);
 
-        println!("{}", query);
-
         let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
             .fetch_one(db)
             .await
@@ -106,6 +94,7 @@ pub fn column_resolver<'a>(
 pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
+        let table_name = table.table_name();
 
         let input = ctx.args.try_get("input")?;
 
@@ -125,7 +114,7 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
             .unwrap();
 
         let query = binding
-            .into_table(Alias::new(table.table_info.name))
+            .into_table(table_name)
             .columns(input.iter().map(|(name, _)| Alias::new(name.to_string())));
 
         let mut values = vec![];
