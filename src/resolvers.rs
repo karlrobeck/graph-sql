@@ -2,7 +2,9 @@ use async_graphql::{
     Value,
     dynamic::{FieldFuture, ResolverContext},
 };
-use sea_query::{Alias, ColumnDef, ColumnSpec, Expr, Query, SqliteQueryBuilder};
+use sea_query::{
+    Alias, ColumnDef, ColumnSpec, ConditionalStatement, Expr, Query, SqliteQueryBuilder,
+};
 use sqlx::SqlitePool;
 
 use crate::types::{SqliteTable, ToSeaQueryValue};
@@ -32,6 +34,41 @@ pub fn list_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> F
             .collect::<Vec<_>>();
 
         Ok(Some(Value::List(result)))
+    })
+}
+
+pub fn view_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
+    FieldFuture::new(async move {
+        let db = ctx.data::<SqlitePool>()?;
+
+        let id = ctx
+            .args
+            .get("id")
+            .ok_or(anyhow::anyhow!("Unable to get id"))?
+            .i64()?;
+
+        let table_name = table_info.table_name();
+
+        let pk_col = table_info.primary_key()?;
+
+        let query = Query::select()
+            .from(table_name)
+            .column(Alias::new(pk_col.get_column_name()))
+            .and_where(Expr::col(Alias::new(pk_col.get_column_name())).eq(id))
+            .to_string(SqliteQueryBuilder);
+
+        let result = sqlx::query_as::<_, (i64,)>(&query)
+            .fetch_one(db)
+            .await
+            .map(|(val,)| {
+                serde_json::json!({
+                  "name":pk_col.get_column_name(),
+                  "id":val,
+                })
+            })
+            .map(|val| Value::from_json(val).unwrap())?;
+
+        Ok(Some(result))
     })
 }
 
