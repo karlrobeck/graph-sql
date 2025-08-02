@@ -1,6 +1,6 @@
 use anyhow::Result;
-use async_graphql::dynamic::{Field, InputObject, InputValue, Object, TypeRef};
-use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType};
+use async_graphql::dynamic::{Field, InputObject, InputValue, Object, TypeRef, ValueAccessor};
+use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, SimpleExpr};
 use sqlx::{SqlitePool, prelude::FromRow};
 
 use crate::resolvers::{column_resolver, insert_resolver, update_resolver};
@@ -168,6 +168,22 @@ impl SqliteTable {
 
     pub fn table_name(&self) -> Alias {
         Alias::new(self.table_info.name.clone())
+    }
+}
+
+pub trait ToSeaQueryValue {
+    fn to_sea_query(&self, col_type: &ColumnType) -> async_graphql::Result<SimpleExpr>;
+}
+
+impl ToSeaQueryValue for ValueAccessor<'_> {
+    fn to_sea_query(&self, col_type: &ColumnType) -> async_graphql::Result<SimpleExpr> {
+        match col_type {
+            ColumnType::Text => self.string().map(|val| Into::<SimpleExpr>::into(val)),
+            ColumnType::Integer => self.i64().map(|val| Into::<SimpleExpr>::into(val)),
+            ColumnType::Boolean => self.boolean().map(|val| Into::<SimpleExpr>::into(val)),
+            ColumnType::Float => self.f64().map(|val| Into::<SimpleExpr>::into(val)),
+            _ => self.string().map(|val| Into::<SimpleExpr>::into(val)),
+        }
     }
 }
 

@@ -7,7 +7,7 @@ use sea_query::{
 };
 use sqlx::SqlitePool;
 
-use crate::types::SqliteTable;
+use crate::types::{SqliteTable, ToSeaQueryValue};
 
 pub fn list_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
     FieldFuture::new(async move {
@@ -128,15 +128,7 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
                 .get_column_type()
                 .ok_or(anyhow::anyhow!("Unable to get column type"))?;
 
-            let val = match col_type {
-                ColumnType::Text => val.string().map(|val| Into::<SimpleExpr>::into(val)),
-                ColumnType::Integer => val.i64().map(|val| Into::<SimpleExpr>::into(val)),
-                ColumnType::Boolean => val.boolean().map(|val| Into::<SimpleExpr>::into(val)),
-                ColumnType::Float => val.f64().map(|val| Into::<SimpleExpr>::into(val)),
-                _ => val.string().map(|val| Into::<SimpleExpr>::into(val)),
-            };
-
-            values.push(val?);
+            values.push(val.to_sea_query(col_type)?);
         }
 
         let query =
@@ -160,6 +152,10 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
 
 pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
     FieldFuture::new(async move {
+        let table_name = table.table_name();
+
+        let pk_col = table.primary_key()?;
+
         let db = ctx.data::<SqlitePool>()?;
 
         let id = ctx.args.try_get("id")?.i64()?;
@@ -170,20 +166,8 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
 
         let mut binding = Query::update();
 
-        // Find the primary key column name
-        let pk_col = table
-            .column_info
-            .iter()
-            .find(|col| {
-                col.get_column_spec()
-                    .iter()
-                    .find(|spec| matches!(spec, ColumnSpec::PrimaryKey))
-                    .is_some()
-            })
-            .ok_or(anyhow::anyhow!("Unable to get primary key"))?;
-
         // Build the update query
-        let mut query = binding.table(Alias::new(table.table_info.name));
+        let mut query = binding.table(table_name);
 
         // Collect columns and values to update
         let mut values = vec![];
@@ -196,15 +180,7 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
                 .get_column_type()
                 .ok_or(anyhow::anyhow!("Unable to get column type"))?;
 
-            let val = match col_type {
-                ColumnType::Text => val.string().map(|val| Into::<SimpleExpr>::into(val)),
-                ColumnType::Integer => val.i64().map(|val| Into::<SimpleExpr>::into(val)),
-                ColumnType::Boolean => val.boolean().map(|val| Into::<SimpleExpr>::into(val)),
-                ColumnType::Float => val.f64().map(|val| Into::<SimpleExpr>::into(val)),
-                _ => val.string().map(|val| Into::<SimpleExpr>::into(val)),
-            };
-
-            values.push((Alias::new(key.to_string()), val?));
+            values.push((Alias::new(key.to_string()), val.to_sea_query(col_type)?));
         }
 
         // Set values to update
