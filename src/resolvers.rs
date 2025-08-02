@@ -113,6 +113,17 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
 
         let mut binding = Query::insert();
 
+        let pkey_col = table
+            .column_info
+            .iter()
+            .find(|col| {
+                col.get_column_spec()
+                    .iter()
+                    .find(|spec| matches!(spec, ColumnSpec::PrimaryKey))
+                    .is_some()
+            })
+            .unwrap();
+
         let query = binding
             .into_table(Alias::new(table.table_info.name))
             .columns(input.iter().map(|(name, _)| Alias::new(name.to_string())));
@@ -139,30 +150,22 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
             values.push(val?);
         }
 
-        let query = query.returning(
-            Query::returning().column(
-                table
-                    .column_info
-                    .iter()
-                    .find(|col| {
-                        col.get_column_spec()
-                            .iter()
-                            .find(|spec| matches!(spec, ColumnSpec::PrimaryKey))
-                            .is_some()
-                    })
-                    .map(|col| Alias::new(col.get_column_name()))
-                    .unwrap(),
-            ),
-        );
+        let query =
+            query.returning(Query::returning().column(Alias::new(pkey_col.get_column_name())));
 
         let query = query.values(values)?.to_string(SqliteQueryBuilder);
 
         let result = sqlx::query_as::<_, (i64,)>(&query)
             .fetch_one(db)
             .await
-            .map(|(val,)| val.into())?;
+            .map(|(val,)| {
+                serde_json::json!({
+                    "name": pkey_col.get_column_name(),
+                    "id": val
+                })
+            })?;
 
-        Ok(Some(Value::Number(result)))
+        Ok(Some(Value::from_json(result).unwrap()))
     })
 }
 
@@ -242,8 +245,13 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
         let result = sqlx::query_as::<_, (i64,)>(&query)
             .fetch_one(db)
             .await
-            .map(|(val,)| val.into())?;
+            .map(|(val,)| {
+                serde_json::json!({
+                    "name":pk_col.get_column_name(),
+                    "id":val
+                })
+            })?;
 
-        Ok(Some(Value::Number(result)))
+        Ok(Some(Value::from_json(result).unwrap()))
     })
 }
