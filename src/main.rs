@@ -44,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
 
         let insert_mutation = table.to_graphql_insert_mutation();
         let update_mutation = table.to_graphql_update_mutation();
+        let delete_mutation = table.to_graphql_delete_mutation();
 
         let table_obj = table_obj
             .field(table.to_graphql_list_query())
@@ -51,7 +52,8 @@ async fn main() -> anyhow::Result<()> {
 
         mutation_object = mutation_object
             .field(insert_mutation.1)
-            .field(update_mutation.1);
+            .field(update_mutation.1)
+            .field(delete_mutation);
 
         inputs.push(insert_mutation.0);
         inputs.push(update_mutation.0);

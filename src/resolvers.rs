@@ -3,7 +3,8 @@ use async_graphql::{
     dynamic::{FieldFuture, ResolverContext},
 };
 use sea_query::{
-    Alias, ColumnDef, ColumnSpec, ConditionalStatement, Expr, Query, SqliteQueryBuilder,
+    Alias, ColumnDef, ColumnSpec, ConditionalStatement, Expr, Query, QueryStatementWriter,
+    SqliteQueryBuilder,
 };
 use sqlx::SqlitePool;
 
@@ -237,5 +238,28 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
             })?;
 
         Ok(Some(Value::from_json(result)?))
+    })
+}
+
+pub fn delete_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
+    FieldFuture::new(async move {
+        let table_name = table.table_name();
+
+        let pk_col = table.primary_key()?;
+
+        let db = ctx.data::<SqlitePool>()?;
+
+        let id = ctx.args.try_get("id")?.i64()?;
+
+        let query = Query::delete()
+            .from_table(table_name)
+            .and_where(Expr::col(Alias::new(pk_col.get_column_name())).eq(id))
+            .to_string(SqliteQueryBuilder);
+
+        let result = sqlx::query(&query).execute(db).await?;
+
+        Ok(Some(Value::from_json(
+            serde_json::json!({"rows_affected":result.rows_affected()}),
+        )?))
     })
 }

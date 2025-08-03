@@ -4,7 +4,8 @@ use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, SimpleExpr};
 use sqlx::{SqlitePool, prelude::FromRow};
 
 use crate::resolvers::{
-    column_resolver, insert_resolver, list_resolver, update_resolver, view_resolver,
+    column_resolver, delete_resolver, insert_resolver, list_resolver, update_resolver,
+    view_resolver,
 };
 
 #[derive(Debug, Clone)]
@@ -121,7 +122,8 @@ impl SqliteTable {
             "view",
             TypeRef::named(format!("{}_node", table_name)),
             move |ctx| view_resolver(table.clone(), ctx),
-        ).argument(InputValue::new("id", TypeRef::named_nn(TypeRef::INT)))
+        )
+        .argument(InputValue::new("id", TypeRef::named_nn(TypeRef::INT)))
     }
 
     pub fn to_graphql_insert_mutation(&self) -> (InputObject, Field) {
@@ -177,6 +179,31 @@ impl SqliteTable {
         ));
 
         (input, insert_mutation_field)
+    }
+
+    pub fn to_graphql_delete_mutation(&self) -> Field {
+        let pk_col = self
+            .column_info
+            .iter()
+            .find(|col| {
+                col.get_column_spec()
+                    .iter()
+                    .any(|spec| matches!(spec, ColumnSpec::PrimaryKey))
+            })
+            .unwrap();
+
+        let pk_input = InputValue::new("id", TypeRef::named_nn(pk_col.type_name()));
+
+        let table_clone = self.clone();
+
+        let delete_mutation_field = Field::new(
+            format!("delete_{}", table_clone.table_info.name),
+            TypeRef::named_nn(TypeRef::BOOLEAN),
+            move |ctx| delete_resolver(table_clone.clone(), ctx),
+        )
+        .argument(pk_input);
+
+        delete_mutation_field
     }
 
     // helpers
