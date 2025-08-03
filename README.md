@@ -351,31 +351,33 @@ query field that contains `list` and `view` operations:
 
 ```graphql
 type Query {
-  tableName: tableName_node
+  table_name: table_name
 }
 
-type tableName_node {
+type table_name_node {
   # Table columns as fields
   column1: Type
   column2: Type
   
   # Foreign key relationships (automatically detected)
   relatedEntity: relatedEntity_node  # foreign_key_id becomes relatedEntity
-  
+}
+
+type table_name {
   # Query operations
-  list(input: list_tableName_input!): [tableName_node]
-  view(input: view_tableName_input!): tableName_node
+  list(input: list_table_name_input!): [table_name_node]
+  view(input: view_table_name_input!): table_name_node
 }
 ```
 
 This structure allows for intuitive querying where you can:
 
-- **Navigate to a table**: `query { cake { ... } }`
+- **Navigate to a table**: `query { table_name { ... } }`
 - **List multiple records**:
-  `cake { list(input: {page: 1, limit: 10}) { ... } }`
-- **View specific record**: `cake { view(input: {id: 3}) { ... } }`
+  `table_name { list(input: {page: 1, limit: 10}) { ... } }`
+- **View specific record**: `table_name { view(input: {id: 3}) { ... } }`
 - **Follow relationships**:
-  `cake_filling { view(input: {id: 1}) { filling { name } } }`
+  `table_name { view(input: {id: 1}) { relatedEntity { name } } }`
 - **Combine operations**: Get both list and specific views in a single query
 
 ## 🗄️ Database Schema Mapping
@@ -439,9 +441,9 @@ graph-sql generates this GraphQL schema:
 
 ```graphql
 type Query {
-  cake: cake_node
-  filling: filling_node
-  cake_filling: cake_filling_node
+  cake: cake
+  filling: filling
+  cake_filling: cake_filling
 }
 
 type Mutation {
@@ -463,6 +465,9 @@ type cake_node {
   is_vegan: Int
   created_at: String
   description: String
+}
+
+type cake {
   list(input: list_cake_input!): [cake_node]
   view(input: view_cake_input!): cake_node
 }
@@ -472,6 +477,9 @@ type filling_node {
   name: String!
   calories: Int
   fat: Float
+}
+
+type filling {
   list(input: list_filling_input!): [filling_node]
   view(input: view_filling_input!): filling_node
 }
@@ -482,6 +490,9 @@ type cake_filling_node {
   # Foreign key relationships (automatically detected)
   cake: cake_node!        # cake_id becomes cake field
   filling: filling_node!  # filling_id becomes filling field
+}
+
+type cake_filling {
   list(input: list_cake_filling_input!): [cake_filling_node]
   view(input: view_cake_filling_input!): cake_filling_node
 }
