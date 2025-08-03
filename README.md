@@ -827,6 +827,7 @@ This will:
 
 - [x] **Mutations support**: INSERT, UPDATE, DELETE operations ✅
 - [x] **Relationship mapping**: Foreign keys → GraphQL relationships ✅
+- [ ] **Data loaders**: Efficient batching and caching for N+1 query prevention
 - [ ] **Subscriptions**: Real-time updates
 - [ ] **Advanced filtering**: WHERE clauses and complex query conditions
 - [ ] **Improved pagination**: Cursor-based pagination and sorting
