@@ -19,7 +19,7 @@ async fn main() -> async_graphql::Result<()> {
     let db = SqlitePool::connect("sqlite::memory:").await?;
 
     println!("📊 Running database migrations...");
-    sqlx::migrate!("./migrations")
+    sqlx::migrate!("./examples/ecommerce/migrations")
         .run(&db)
         .await
         .map_err(|e| anyhow::anyhow!("Migration failed: {}", e))?;
