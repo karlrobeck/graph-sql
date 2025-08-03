@@ -14,9 +14,16 @@ pub fn list_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> F
         let table_name = table_info.table_name();
         let pk_col = table_info.primary_key()?;
 
+        let input = ctx.args.try_get("input")?.object()?;
+
+        let page = input.try_get("page")?.u64()?;
+        let limit = input.try_get("limit")?.u64()?;
+
         let query = Query::select()
             .from(table_name)
             .column(Alias::new(pk_col.get_column_name()))
+            .offset((page - 1) * limit)
+            .limit(limit)
             .to_string(SqliteQueryBuilder);
 
         let result = sqlx::query_as::<_, (i64,)>(&query)
@@ -122,8 +129,6 @@ pub fn foreign_key_resolver<'a>(
             )
             .and_where(Expr::col((Alias::new(table_name.clone()), Alias::new(pk_name))).eq(pk_id))
             .to_string(SqliteQueryBuilder);
-
-        println!("{:#?}", query);
 
         let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
             .fetch_one(db)
