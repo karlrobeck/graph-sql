@@ -30,10 +30,10 @@ cd graph-sql
 cargo build --release
 ```
 
-### Using Cargo
+### Using Cargo (from Git)
 
 ```bash
-cargo install graph-sql
+cargo install --git https://github.com/karlrobeck/graph-sql.git
 ```
 
 ## 🚀 Quick Start
