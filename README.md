@@ -788,7 +788,7 @@ cargo test
 
 ### Running with Sample Data
 
-The project includes a sample bakery database schema in `migrations/`:
+The project includes sample database schemas in the examples:
 
 ```bash
 cargo run
@@ -800,17 +800,6 @@ This will:
 2. Run migrations to create sample tables
 3. Start the GraphQL server
 4. Open GraphiQL at `http://localhost:8000`
-
-### Database Migrations
-
-Migrations are stored in the `migrations/` directory and automatically run on
-startup:
-
-```
-migrations/
-├── 20250730201446_bakery.up.sql   # Create tables
-└── 20250730201446_bakery.down.sql # Drop tables
-```
 
 ## 🚧 Current Limitations
 
