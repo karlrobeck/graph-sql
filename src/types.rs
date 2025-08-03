@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use async_graphql::dynamic::{
     Field, InputObject, InputValue, Object, Scalar, TypeRef, ValueAccessor,
 };
-use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, SimpleExpr};
+use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, Iden, SimpleExpr};
 use sqlx::{SqlitePool, prelude::FromRow};
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     },
     traits::{
         ToGraphqlFieldExt, ToGraphqlInputValueExt, ToGraphqlMutations, ToGraphqlNode,
-        ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlObject, ToGraphqlTypeRefExt,
+        ToGraphqlObject, ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlTypeRefExt,
     },
 };
 
@@ -141,6 +141,7 @@ impl ToGraphqlScalarExt for ColumnDef {
             ColumnType::Boolean => Scalar::new(TypeRef::BOOLEAN),
             ColumnType::Integer => Scalar::new(TypeRef::INT),
             ColumnType::Float => Scalar::new(TypeRef::FLOAT),
+            ColumnType::Custom(r#type) => Scalar::new(r#type.to_string()),
             _ => Scalar::new(TypeRef::STRING),
         };
 
@@ -360,11 +361,15 @@ impl ToGraphqlQueries for SqliteTable {
 }
 
 impl ToGraphqlObject for SqliteTable {
-    fn to_object(&self) -> async_graphql::Result<(Object, Vec<Field>, Vec<InputObject>)> {
+    fn to_object(
+        &self,
+    ) -> async_graphql::Result<(Object, Vec<Object>, Vec<Field>, Vec<InputObject>)> {
         let mut inputs = vec![];
         let mut mutations = vec![];
+        let mut queries = vec![];
 
         let table_node = self.to_node()?;
+        let table_name = self.table_name();
 
         let insert_mutation = self.to_insert_mutation()?;
         let update_mutation = self.to_update_mutation()?;
@@ -373,7 +378,11 @@ impl ToGraphqlObject for SqliteTable {
         let list_query = self.to_list_query()?;
         let view_query = self.to_view_query()?;
 
-        let table_node = table_node.field(list_query.1).field(view_query.1);
+        queries.push(
+            Object::new(table_name.to_string())
+                .field(list_query.1)
+                .field(view_query.1),
+        );
 
         mutations.push(insert_mutation.1);
         mutations.push(update_mutation.1);
@@ -385,6 +394,6 @@ impl ToGraphqlObject for SqliteTable {
         inputs.push(list_query.0);
         inputs.push(view_query.0);
 
-        Ok((table_node, mutations, inputs))
+        Ok((table_node, queries, mutations, inputs))
     }
 }

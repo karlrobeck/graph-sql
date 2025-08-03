@@ -274,8 +274,11 @@ pub trait ToGraphqlObject {
     /// # Returns
     ///
     /// A tuple containing:
-    /// - `Object`: The main table object with embedded query operations
+    /// - `Object`: The main table object as a node
+    /// - `Vec<Field>`: List and View query field definition to be added to the schema's Query type
     /// - `Vec<Field>`: All mutation field definitions to be added to the schema's Mutation type
     /// - `Vec<InputObject>`: All input object type definitions to be registered with the schema
-    fn to_object(&self) -> async_graphql::Result<(Object, Vec<Field>, Vec<InputObject>)>;
+    fn to_object(
+        &self,
+    ) -> async_graphql::Result<(Object, Vec<Object>, Vec<Field>, Vec<InputObject>)>;
 }

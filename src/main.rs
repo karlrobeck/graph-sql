@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use async_graphql::{
     Value,
     dynamic::{Field, FieldFuture, Object, Schema, TypeRef},
@@ -44,14 +42,18 @@ async fn main() -> async_graphql::Result<()> {
     for table in tables {
         let name = table.table_name();
 
-        let (query, mutations, mutation_inputs) = table.to_object()?;
+        let (node, queries, mutations, mutation_inputs) = table.to_object()?;
 
         // add query
-        query_object = query_object.field(Field::new(
-            name.to_string(),
-            TypeRef::named_nn(query.type_name()),
-            |_| FieldFuture::new(async move { Ok(Some(Value::from(""))) }),
-        ));
+        for query in queries {
+            query_object = query_object.field(Field::new(
+                name.to_string(),
+                TypeRef::named_nn(query.type_name()),
+                |_| FieldFuture::new(async move { Ok(Some(Value::from(""))) }),
+            ));
+
+            table_objects.push(query);
+        }
 
         // add mutations
         for mutation in mutations.into_iter() {
@@ -59,7 +61,7 @@ async fn main() -> async_graphql::Result<()> {
         }
 
         // register types
-        table_objects.push(query);
+        table_objects.push(node);
         inputs.extend(mutation_inputs);
     }
 
