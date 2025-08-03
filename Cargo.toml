@@ -29,3 +29,19 @@ sqlx = { version = "0.8.6", features = [
   "migrate",
 ] }
 tokio = { version = "1.47.0", features = ["full"] }
+
+[[example]]
+name = "blog"
+path = "examples/blog/src/main.rs"
+
+[[example]]
+name = "ecommerce"
+path = "examples/ecommerce/src/main.rs"
+
+[[example]]
+name = "tasks"
+path = "examples/tasks/src/main.rs"
+
+[[example]]
+name = "library"
+path = "examples/library/src/main.rs"

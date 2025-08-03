@@ -1,7 +1,71 @@
 # graph-sql
 
-A lightweight GraphQL server that automatically introspects your SQLite database
-and generates a type-safe GraphQL schema with zero configuration.
+A Rust library that automatically introspects your SQLite database and generates a complete GraphQL API with zero configuration. Perfect for rapid prototyping, admin panels, and turning existing databases into modern GraphQL services.
+
+For detailed documentation and more queries, see the [examples directory](./examples/).
+
+## 🔧 Library API
+
+graph-sql provides a simple, elegant API for integrating GraphQL into your Rust applications:
+
+### **Core Functions**
+
+```rust
+// Main introspection function I created
+pub async fn introspect(pool: &SqlitePool) -> Result<SchemaBuilder, Error>
+
+// Schema builder for customization
+impl SchemaBuilder {
+    pub fn finish(self) -> Result<Schema<Query, Mutation, EmptySubscription>, Error>
+    // Additional customization methods available
+}
+```
+
+### **Integration Patterns**
+
+**🔥 Minimal Setup** (3 lines):
+```rust
+let db = SqlitePool::connect("sqlite://app.db").await?;
+let schema = graph_sql::introspect(&db).await?.finish()?;
+let app = Router::new().route("/graphql", post_service(GraphQL::new(schema)));
+```
+
+**🛠️ With Custom Configuration**:
+```rust
+let schema = graph_sql::introspect(&db)
+    .await?
+    // Add custom resolvers, middleware, etc.
+    .finish()?;
+```
+
+**🔄 With Hot Reloading** (Development):
+```rust
+// Reintrospect when schema changes
+let schema = graph_sql::introspect(&db).await?.finish()?;
+```
+
+### **Framework Integration**
+
+graph-sql works seamlessly with popular Rust web frameworks:
+
+- **Axum** ✅ (shown in examples)
+- **Actix-web** ✅ (via async-graphql-actix-web)
+- **Warp** ✅ (via async-graphql-warp)
+- **Tide** ✅ (via async-graphql-tide)
+
+### **Use Cases**
+
+Perfect for:
+- 🚀 **Rapid prototyping** - Turn any SQLite DB into a GraphQL API instantly
+- 🛠️ **Admin panels** - Auto-generated CRUD interfaces for content management
+- 📊 **Data exploration** - Interactive GraphiQL interface for database exploration
+- 🔄 **Legacy modernization** - Add GraphQL layer to existing SQLite applications
+- 🧪 **Testing & development** - Quick GraphQL APIs for frontend development
+
+## 📖 How It Works databases into modern GraphQL services.
+
+> **⚠️ Development Status**  
+> **This project is in active development.** Breaking changes may occur without notice as we rapidly iterate and improve the library. While the core functionality is stable, the API may evolve significantly. For production use, please pin to a specific commit and thoroughly test any updates.
 
 ## 🚀 Features
 
@@ -16,15 +80,74 @@ and generates a type-safe GraphQL schema with zero configuration.
 - **Built-in GraphiQL**: Interactive GraphQL playground included
 - **Fast & Lightweight**: Built with Rust for optimal performance
 - **SQLite Focus**: Optimized specifically for SQLite databases
+- **Comprehensive Examples**: 4 complete examples covering different domains
+  and use cases
 
 ## 📋 Prerequisites
 
 - Rust 1.86.0+ (2024 edition)
 - SQLite database
 
-## 🛠️ Installation
+## 🛠️ Installation & Usage
 
-### From Source
+### 📦 **As a Library (Recommended)**
+
+Add graph-sql to your `Cargo.toml`:
+
+```toml
+[dependencies]
+graph-sql = { git = "https://github.com/karlrobeck/graph-sql.git" }
+async-graphql = "7.0.17"
+async-graphql-axum = "7.0.17"
+axum = "0.8.4"
+sqlx = { version = "0.8.6", features = ["runtime-tokio-native-tls", "sqlite", "migrate"] }
+tokio = { version = "1.47.0", features = ["full"] }
+```
+
+**Basic setup** in your `main.rs`:
+
+```rust
+use async_graphql::http::GraphiQLSource;
+use async_graphql_axum::GraphQL;
+use axum::{Router, response::{Html, IntoResponse}};
+use sqlx::SqlitePool;
+use tokio::net::TcpListener;
+
+async fn graphiql() -> impl IntoResponse {
+    Html(GraphiQLSource::build().endpoint("/").finish())
+}
+
+#[tokio::main]
+async fn main() -> async_graphql::Result<()> {
+    // Connect to your SQLite database
+    let db = SqlitePool::connect("sqlite://your_database.db").await?;
+    
+    // Optional: Run migrations
+    sqlx::migrate!("./migrations").run(&db).await?;
+    
+    // Let graph-sql introspect and generate the schema
+    let schema = graph_sql::introspect(&db).await?.finish()?;
+    
+    // Set up your GraphQL server
+    let router = Router::new().route(
+        "/",
+        axum::routing::get(graphiql).post_service(GraphQL::new(schema)),
+    );
+    
+    let listener = TcpListener::bind("0.0.0.0:8000").await?;
+    axum::serve(listener, router).await?;
+    
+    Ok(())
+}
+```
+
+That's it! graph-sql automatically:
+- 🔍 **Introspects your database** schema
+- 🏗️ **Generates GraphQL types** for all tables  
+- 🔗 **Maps foreign keys** to GraphQL relationships
+- ⚡ **Creates CRUD resolvers** for all operations
+
+### 🛠️ **From Source (Development)**
 
 ```bash
 git clone https://github.com/karlrobeck/graph-sql.git
@@ -32,23 +155,121 @@ cd graph-sql
 cargo build --release
 ```
 
-### Using Cargo (from Git)
+### 🎯 **Try the Examples**
+
+Want to see graph-sql in action? Clone the repository and run the included examples:
 
 ```bash
-cargo install --git https://github.com/karlrobeck/graph-sql.git
+git clone https://github.com/karlrobeck/graph-sql.git
+cd graph-sql
+cargo run --example blog    # Blog system on port 8080
+cargo run --example tasks   # Task manager on port 8082  
 ```
 
 ## 🚀 Quick Start
 
-1. **Prepare your SQLite database** with some tables and data
-2. **Run the server**:
-   ```bash
-   cargo run
-   ```
-3. **Open GraphiQL** at `http://localhost:8000`
-4. **Start querying and mutating** your database with GraphQL!
+### **Using graph-sql in Your Project**
 
-## 📖 How It Works
+1. **Add to your `Cargo.toml`**:
+   ```toml
+   [dependencies]
+   graph-sql = { git = "https://github.com/karlrobeck/graph-sql.git" }
+   ```
+
+2. **Create your GraphQL server** (3 lines of code):
+   ```rust
+   let db = SqlitePool::connect("sqlite://your_database.db").await?;
+   let schema = graph_sql::introspect(&db).await?.finish()?;
+   let router = Router::new().route("/", get(graphiql).post_service(GraphQL::new(schema)));
+   ```
+
+3. **Run your server** and open GraphiQL to explore your auto-generated API!
+
+### **Try the Examples**
+
+See graph-sql in action with real-world examples:
+```bash
+git clone https://github.com/karlrobeck/graph-sql.git && cd graph-sql
+cargo run --example blog    # Complete blog system
+cargo run --example ecommerce # E-commerce platform
+```
+
+## � Examples
+
+graph-sql includes comprehensive examples demonstrating different use cases and database patterns. Each example showcases the automatic schema generation and foreign key relationship mapping in real-world scenarios.
+
+### 🚀 **Running Examples**
+
+Run any example using Cargo:
+
+```bash
+# Blog system (users, posts, comments, categories, tags)
+cargo run --example blog
+
+# E-commerce platform (products, orders, customers, reviews)  
+cargo run --example ecommerce
+
+# Task manager (projects, tasks, dependencies, labels)
+cargo run --example tasks
+
+# Library system (books, authors, loans, members, reviews)
+cargo run --example library
+```
+
+Each example:
+- 🎯 **Runs on a different port** (8080, 8081, 8082, 8083)
+- 💾 **Uses in-memory SQLite** for fresh data on each run
+- 🔄 **Includes sample data** and realistic relationships
+- 📖 **Provides comprehensive documentation** with example queries
+- 🌐 **Offers GraphiQL interface** for interactive exploration
+
+### 📋 **Example Overview**
+
+| Example | Port | Focus | Complexity | Key Features |
+|---------|------|-------|------------|--------------|
+| **Blog** | 8080 | Content Management | Intermediate | Many-to-many relationships, hierarchical categories |
+| **E-commerce** | 8081 | Business Transactions | Advanced | Complex product catalog, order workflows |
+| **Tasks** | 8082 | Project Management | Simple | Self-referencing dependencies, basic CRUD |
+| **Library** | 8083 | Data Types & Logic | Comprehensive | All SQLite types, complex business rules |
+
+### 🎯 **Quick Example - Blog System**
+
+```bash
+cargo run --example blog
+# Open http://localhost:8080/graphiql
+```
+
+**Try this query**:
+```graphql
+{
+  posts {
+    title
+    content
+    author {
+      name
+      email
+    }
+    tags {
+      name
+    }
+    comments {
+      content
+      author {
+        name
+      }
+    }
+  }
+}
+```
+
+**See automatic relationship mapping**:
+- `author_id` column → `author` relationship field
+- `posts_tags` junction table → `tags` many-to-many relationship  
+- Reverse relationships: `user.posts`, `user.comments`
+
+For detailed documentation and more queries, see the [examples directory](./examples/).
+
+## �📖 How It Works
 
 graph-sql follows a comprehensive workflow:
 

@@ -113,8 +113,6 @@ impl SqliteTable {
             });
         }
 
-        println!("{:#?}", sqlite_tables);
-
         Ok(sqlite_tables)
     }
 
