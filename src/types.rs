@@ -12,7 +12,7 @@ use crate::{
     },
     traits::{
         ToGraphqlFieldExt, ToGraphqlInputValueExt, ToGraphqlMutations, ToGraphqlNode,
-        ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlTypeRefExt,
+        ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlObject, ToGraphqlTypeRefExt,
     },
 };
 
@@ -356,5 +356,35 @@ impl ToGraphqlQueries for SqliteTable {
         ));
 
         Ok((input, view_query))
+    }
+}
+
+impl ToGraphqlObject for SqliteTable {
+    fn to_object(&self) -> async_graphql::Result<(Object, Vec<Field>, Vec<InputObject>)> {
+        let mut inputs = vec![];
+        let mut mutations = vec![];
+
+        let table_node = self.to_node()?;
+
+        let insert_mutation = self.to_insert_mutation()?;
+        let update_mutation = self.to_update_mutation()?;
+        let delete_mutation = self.to_delete_mutation()?;
+
+        let list_query = self.to_list_query()?;
+        let view_query = self.to_view_query()?;
+
+        let table_node = table_node.field(list_query.1).field(view_query.1);
+
+        mutations.push(insert_mutation.1);
+        mutations.push(update_mutation.1);
+        mutations.push(delete_mutation.1);
+
+        inputs.push(insert_mutation.0);
+        inputs.push(update_mutation.0);
+        inputs.push(delete_mutation.0);
+        inputs.push(list_query.0);
+        inputs.push(view_query.0);
+
+        Ok((table_node, mutations, inputs))
     }
 }

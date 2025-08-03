@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use async_graphql::{
     Value,
     dynamic::{Field, FieldFuture, Object, Schema, TypeRef},
@@ -13,7 +15,7 @@ use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 
 use crate::{
-    traits::{ToGraphqlMutations, ToGraphqlNode, ToGraphqlQueries},
+    traits::{ToGraphqlMutations, ToGraphqlNode, ToGraphqlObject, ToGraphqlQueries},
     types::SqliteTable,
 };
 
@@ -43,36 +45,25 @@ async fn main() -> async_graphql::Result<()> {
     let mut inputs = vec![];
 
     for table in tables {
-        let table_obj = table.to_node()?;
         let name = table.table_name();
 
-        let insert_mutation = table.to_insert_mutation()?;
-        let update_mutation = table.to_update_mutation()?;
-        let delete_mutation = table.to_delete_mutation()?;
+        let (query, mutations, mutation_inputs) = table.to_object()?;
 
-        let list_query = table.to_list_query()?;
-        let view_query = table.to_view_query()?;
-
-        let table_obj = table_obj.field(list_query.1).field(view_query.1);
-
-        mutation_object = mutation_object
-            .field(insert_mutation.1)
-            .field(update_mutation.1)
-            .field(delete_mutation.1);
-
-        inputs.push(insert_mutation.0);
-        inputs.push(update_mutation.0);
-        inputs.push(delete_mutation.0);
-        inputs.push(list_query.0);
-        inputs.push(view_query.0);
-
+        // add query
         query_object = query_object.field(Field::new(
             name.to_string(),
-            TypeRef::named_nn(table_obj.type_name()),
+            TypeRef::named_nn(query.type_name()),
             |_| FieldFuture::new(async move { Ok(Some(Value::from(""))) }),
         ));
 
-        table_objects.push(table_obj);
+        // add mutations
+        for mutation in mutations.into_iter() {
+            mutation_object = mutation_object.field(mutation);
+        }
+
+        // register types
+        table_objects.push(query);
+        inputs.extend(mutation_inputs);
     }
 
     let mut schema = Schema::build(

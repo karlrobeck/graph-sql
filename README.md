@@ -17,7 +17,7 @@ and generates a type-safe GraphQL schema with zero configuration.
 
 ## 📋 Prerequisites
 
-- Rust 1.75+ (2024 edition)
+- Rust 1.86.0+ (2024 edition)
 - SQLite database
 
 ## 🛠️ Installation
@@ -428,8 +428,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
-for details.
+This project is licensed under the MIT OR Apache-2.0 License - see the
+[LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
