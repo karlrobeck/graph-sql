@@ -161,9 +161,8 @@ Want to see graph-sql in action? Clone the repository and run the included examp
 
 ```bash
 git clone https://github.com/karlrobeck/graph-sql.git
-cd graph-sql
-cargo run --example blog    # Blog system on port 8080
-cargo run --example tasks   # Task manager on port 8082  
+cd graph-sql/examples/blog && cargo run    # Blog system on port 8080
+cd ../tasks && cargo run                   # Task manager on port 8082  
 ```
 
 ## 🚀 Quick Start
@@ -190,8 +189,8 @@ cargo run --example tasks   # Task manager on port 8082
 See graph-sql in action with real-world examples:
 ```bash
 git clone https://github.com/karlrobeck/graph-sql.git && cd graph-sql
-cargo run --example blog    # Complete blog system
-cargo run --example ecommerce # E-commerce platform
+cd examples/blog && cargo run      # Complete blog system
+cd ../ecommerce && cargo run       # E-commerce platform
 ```
 
 ## � Examples
@@ -200,20 +199,20 @@ graph-sql includes comprehensive examples demonstrating different use cases and 
 
 ### 🚀 **Running Examples**
 
-Run any example using Cargo:
+Run any example using Cargo (change directory first for proper migration paths):
 
 ```bash
 # Blog system (users, posts, comments, categories, tags)
-cargo run --example blog
+cd examples/blog && cargo run
 
 # E-commerce platform (products, orders, customers, reviews)  
-cargo run --example ecommerce
+cd examples/ecommerce && cargo run
 
 # Task manager (projects, tasks, dependencies, labels)
-cargo run --example tasks
+cd examples/tasks && cargo run
 
 # Library system (books, authors, loans, members, reviews)
-cargo run --example library
+cd examples/library && cargo run
 ```
 
 Each example:
@@ -235,7 +234,7 @@ Each example:
 ### 🎯 **Quick Example - Blog System**
 
 ```bash
-cargo run --example blog
+cd examples/blog && cargo run
 # Open http://localhost:8080/graphiql
 ```
 
