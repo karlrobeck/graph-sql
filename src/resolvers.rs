@@ -3,10 +3,7 @@ use async_graphql::{
     Value,
     dynamic::{FieldFuture, ResolverContext},
 };
-use sea_query::{
-    Alias, ColumnDef, ColumnSpec, ConditionalStatement, Expr, Query, QueryStatementWriter,
-    SqliteQueryBuilder,
-};
+use sea_query::{Alias, ColumnDef, ColumnSpec, Expr, Query, SqliteQueryBuilder};
 use sqlx::SqlitePool;
 
 use crate::types::{SqliteTable, ToSeaQueryValue};

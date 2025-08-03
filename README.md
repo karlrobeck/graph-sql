@@ -401,6 +401,8 @@ migrations/
 - **Simple types**: Complex SQLite types map to basic GraphQL types
 - **Basic pagination**: List queries use simple page/limit pagination
 - **No subscriptions**: Real-time updates not yet supported
+- **Primary key restriction**: Only `i64` (INTEGER) primary keys are currently
+  supported
 
 ## 🛣️ Roadmap
 
