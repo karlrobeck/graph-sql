@@ -1,11 +1,19 @@
-use anyhow::Result;
-use async_graphql::dynamic::{Field, InputObject, InputValue, Object, TypeRef, ValueAccessor};
+use anyhow::{Result, anyhow};
+use async_graphql::dynamic::{
+    Field, InputObject, InputValue, Object, Scalar, TypeRef, ValueAccessor,
+};
 use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, SimpleExpr};
 use sqlx::{SqlitePool, prelude::FromRow};
 
-use crate::resolvers::{
-    column_resolver, delete_resolver, insert_resolver, list_resolver, update_resolver,
-    view_resolver,
+use crate::{
+    resolvers::{
+        column_resolver, delete_resolver, insert_resolver, list_resolver, update_resolver,
+        view_resolver,
+    },
+    traits::{
+        ToGraphqlFieldExt, ToGraphqlInputValueExt, ToGraphqlMutations, ToGraphqlNode,
+        ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlTypeRefExt,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -89,123 +97,6 @@ impl SqliteTable {
         Ok(sqlite_tables)
     }
 
-    pub fn to_graphql_node(&self) -> Object {
-        let table_name = self.table_info.name.clone();
-
-        let mut node_obj = Object::new(format!("{}_node", table_name.clone()));
-
-        for col in self.column_info.clone() {
-            node_obj = node_obj.field(col.graphql_field(table_name.clone()));
-        }
-
-        node_obj
-    }
-
-    pub fn to_graphql_list_query(&self) -> Field {
-        let table_name = self.table_info.name.clone();
-
-        let table = self.clone();
-
-        Field::new(
-            "list",
-            TypeRef::named_list(format!("{}_node", table_name)),
-            move |ctx| list_resolver(table.clone(), ctx),
-        )
-    }
-
-    pub fn to_graphql_view_query(&self) -> Field {
-        let table_name = self.table_info.name.clone();
-
-        let table = self.clone();
-
-        Field::new(
-            "view",
-            TypeRef::named(format!("{}_node", table_name)),
-            move |ctx| view_resolver(table.clone(), ctx),
-        )
-        .argument(InputValue::new("id", TypeRef::named_nn(TypeRef::INT)))
-    }
-
-    pub fn to_graphql_insert_mutation(&self) -> (InputObject, Field) {
-        let mut input = InputObject::new(format!("insert_{}_input", self.table_info.name));
-
-        for col in self.column_info.iter() {
-            input = input.field(col.graphql_input(false));
-        }
-
-        let table_clone = self.clone();
-        let insert_mutation_field = Field::new(
-            format!("insert_{}", table_clone.table_info.name),
-            TypeRef::named_nn(format!("{}_node", table_clone.table_info.name.clone())),
-            move |ctx| insert_resolver(table_clone.clone(), ctx),
-        )
-        .argument(InputValue::new(
-            "input",
-            TypeRef::named_nn(input.type_name()),
-        ));
-
-        (input, insert_mutation_field)
-    }
-
-    pub fn to_graphql_update_mutation(&self) -> (InputObject, Field) {
-        let mut input = InputObject::new(format!("update_{}_input", self.table_info.name));
-
-        let pk_col = self
-            .column_info
-            .iter()
-            .find(|col| {
-                col.get_column_spec()
-                    .iter()
-                    .any(|spec| matches!(spec, ColumnSpec::PrimaryKey))
-            })
-            .unwrap();
-
-        let pk_input = InputValue::new("id", TypeRef::named_nn(pk_col.type_name()));
-
-        for col in self.column_info.iter() {
-            input = input.field(col.graphql_input(true));
-        }
-
-        let table_clone = self.clone();
-        let insert_mutation_field = Field::new(
-            format!("update_{}", table_clone.table_info.name),
-            TypeRef::named_nn(format!("{}_node", table_clone.table_info.name.clone())),
-            move |ctx| update_resolver(table_clone.clone(), ctx),
-        )
-        .argument(pk_input)
-        .argument(InputValue::new(
-            "input",
-            TypeRef::named_nn(input.type_name()),
-        ));
-
-        (input, insert_mutation_field)
-    }
-
-    pub fn to_graphql_delete_mutation(&self) -> Field {
-        let pk_col = self
-            .column_info
-            .iter()
-            .find(|col| {
-                col.get_column_spec()
-                    .iter()
-                    .any(|spec| matches!(spec, ColumnSpec::PrimaryKey))
-            })
-            .unwrap();
-
-        let pk_input = InputValue::new("id", TypeRef::named_nn(pk_col.type_name()));
-
-        let table_clone = self.clone();
-
-        let delete_mutation_field = Field::new(
-            format!("delete_{}", table_clone.table_info.name),
-            TypeRef::named_nn(TypeRef::BOOLEAN),
-            move |ctx| delete_resolver(table_clone.clone(), ctx),
-        )
-        .argument(pk_input);
-
-        delete_mutation_field
-    }
-
     // helpers
     pub fn primary_key(&self) -> Result<&ColumnDef> {
         self.column_info
@@ -240,43 +131,26 @@ impl ToSeaQueryValue for ValueAccessor<'_> {
     }
 }
 
-pub trait ToGraphQL {
-    fn type_name(&self) -> impl Into<String>;
-    fn type_ref(&self) -> TypeRef;
-    fn graphql_field(&self, table_name: String) -> Field;
-    fn graphql_input(&self, force_nullable: bool) -> InputValue;
+impl ToGraphqlScalarExt for ColumnDef {
+    fn to_scalar(&self) -> async_graphql::Result<Scalar> {
+        let scalar = match self
+            .get_column_type()
+            .ok_or(anyhow!("Unable to get type"))?
+        {
+            ColumnType::Text => Scalar::new(TypeRef::STRING),
+            ColumnType::Boolean => Scalar::new(TypeRef::BOOLEAN),
+            ColumnType::Integer => Scalar::new(TypeRef::INT),
+            ColumnType::Float => Scalar::new(TypeRef::FLOAT),
+            _ => Scalar::new(TypeRef::STRING),
+        };
+
+        Ok(scalar)
+    }
 }
 
-impl ToGraphQL for ColumnDef {
-    fn type_ref(&self) -> TypeRef {
-        let type_name = self.type_name();
-        if self
-            .get_column_spec()
-            .iter()
-            .find(|spec| {
-                matches!(spec, sea_query::ColumnSpec::NotNull)
-                    || !matches!(spec, ColumnSpec::Default(_))
-            })
-            .is_some()
-        {
-            TypeRef::named_nn(type_name)
-        } else {
-            TypeRef::named(type_name)
-        }
-    }
-
-    fn graphql_field(&self, table_name: String) -> Field {
-        let column_name = self.get_column_name().to_string();
-        let column_def = self.clone();
-        let table_name = table_name.clone();
-
-        Field::new(&column_name, self.type_ref(), move |ctx| {
-            column_resolver(table_name.clone(), column_def.clone(), ctx)
-        })
-    }
-
-    fn graphql_input(&self, force_nullable: bool) -> InputValue {
-        let type_name = self.type_name();
+impl ToGraphqlInputValueExt for ColumnDef {
+    fn to_input_value(&self, force_nullable: bool) -> async_graphql::Result<InputValue> {
+        let scalar = self.to_scalar()?;
 
         let mut specs = self.get_column_spec().iter();
 
@@ -289,23 +163,198 @@ impl ToGraphQL for ColumnDef {
             .is_some();
 
         if force_nullable {
-            return InputValue::new(self.get_column_name(), TypeRef::named(type_name));
+            return Ok(InputValue::new(
+                self.get_column_name(),
+                TypeRef::named(scalar.type_name()),
+            ));
         }
 
         if is_not_null && !has_default_val {
-            InputValue::new(self.get_column_name(), TypeRef::named_nn(type_name))
+            Ok(InputValue::new(
+                self.get_column_name(),
+                TypeRef::named_nn(scalar.type_name()),
+            ))
         } else {
-            InputValue::new(self.get_column_name(), TypeRef::named(type_name))
+            Ok(InputValue::new(
+                self.get_column_name(),
+                TypeRef::named(scalar.type_name()),
+            ))
         }
     }
+}
 
-    fn type_name(&self) -> impl Into<String> {
-        match self.get_column_type().unwrap() {
-            ColumnType::Text => TypeRef::STRING,
-            ColumnType::Float => TypeRef::FLOAT,
-            ColumnType::Blob => TypeRef::STRING,
-            ColumnType::Integer | ColumnType::Boolean => TypeRef::INT,
-            _ => TypeRef::STRING,
+impl ToGraphqlTypeRefExt for ColumnDef {
+    fn to_type_ref(&self) -> async_graphql::Result<TypeRef> {
+        let scalar = self.to_scalar()?;
+
+        if self
+            .get_column_spec()
+            .iter()
+            .find(|spec| {
+                matches!(spec, sea_query::ColumnSpec::NotNull)
+                    || !matches!(spec, ColumnSpec::Default(_))
+            })
+            .is_some()
+        {
+            Ok(TypeRef::named_nn(scalar.type_name()))
+        } else {
+            Ok(TypeRef::named(scalar.type_name()))
         }
+    }
+}
+
+impl ToGraphqlFieldExt for ColumnDef {
+    fn to_field(&self, table_name: String) -> async_graphql::Result<Field> {
+        let column_name = self.get_column_name();
+        let column_def = self.clone();
+        let table_name = table_name.clone();
+
+        Ok(Field::new(&column_name, self.to_type_ref()?, move |ctx| {
+            column_resolver(table_name.clone(), column_def.clone(), ctx)
+        }))
+    }
+}
+
+impl ToGraphqlMutations for SqliteTable {
+    fn to_insert_mutation(&self) -> async_graphql::Result<(InputObject, Field)> {
+        let mut input = InputObject::new(format!("insert_{}_input", self.table_info.name));
+        let table_name = self.table_info.name.clone();
+
+        for col in self.column_info.iter() {
+            input = input.field(col.to_input_value(false)?);
+        }
+
+        let table_clone = self.clone();
+
+        let insert_mutation_field = Field::new(
+            format!("insert_{}", table_name),
+            TypeRef::named_nn(format!("{}_node", table_name)),
+            move |ctx| insert_resolver(table_clone.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, insert_mutation_field))
+    }
+
+    fn to_update_mutation(&self) -> async_graphql::Result<(InputObject, Field)> {
+        let mut input = InputObject::new(format!("update_{}_input", self.table_info.name));
+        let table_name = self.table_info.name.to_string();
+
+        let pk_col = self
+            .column_info
+            .iter()
+            .find(|col| {
+                col.get_column_spec()
+                    .iter()
+                    .any(|spec| matches!(spec, ColumnSpec::PrimaryKey))
+            })
+            .unwrap()
+            .to_scalar()?;
+
+        let pk_input = InputValue::new("id", TypeRef::named_nn(pk_col.type_name()));
+
+        for col in self.column_info.iter() {
+            input = input.field(col.to_input_value(true)?);
+        }
+
+        let table_clone = self.clone();
+
+        let update_mutation_field = Field::new(
+            format!("update_{}", table_name),
+            TypeRef::named_nn(format!("{}_node", table_name)),
+            move |ctx| update_resolver(table_clone.clone(), ctx),
+        )
+        .argument(pk_input)
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, update_mutation_field))
+    }
+
+    fn to_delete_mutation(&self) -> async_graphql::Result<(InputObject, Field)> {
+        let pk_col = self.primary_key()?;
+        let table_name = self.table_info.name.clone();
+
+        let input = InputObject::new(format!("delete_{}_input", table_name)).field(
+            InputValue::new("id", TypeRef::named_nn(pk_col.to_scalar()?.type_name())),
+        );
+
+        let table_clone = self.clone();
+
+        let delete_mutation_field = Field::new(
+            format!("delete_{}", table_name),
+            TypeRef::named_nn(TypeRef::BOOLEAN),
+            move |ctx| delete_resolver(table_clone.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, delete_mutation_field))
+    }
+}
+
+impl ToGraphqlNode for SqliteTable {
+    fn to_node(&self) -> async_graphql::Result<Object> {
+        let table_name = self.table_info.name.clone();
+
+        let mut node_obj = Object::new(format!("{}_node", table_name.clone()));
+
+        for col in self.column_info.clone() {
+            node_obj = node_obj.field(col.to_field(table_name.clone())?);
+        }
+
+        Ok(node_obj)
+    }
+}
+
+impl ToGraphqlQueries for SqliteTable {
+    fn to_list_query(&self) -> async_graphql::Result<(InputObject, Field)> {
+        let table_name = self.table_info.name.clone();
+
+        let input = InputObject::new(format!("list_{}_input", table_name))
+            .field(InputValue::new("page", TypeRef::named_nn(TypeRef::INT)))
+            .field(InputValue::new("limit", TypeRef::named_nn(TypeRef::INT)));
+
+        let table = self.clone();
+
+        let list_field = Field::new(
+            "list",
+            TypeRef::named_list(format!("{}_node", table_name)),
+            move |ctx| list_resolver(table.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, list_field))
+    }
+
+    fn to_view_query(&self) -> async_graphql::Result<(InputObject, Field)> {
+        let table_name = self.table_info.name.clone();
+
+        let input = InputObject::new(format!("view_{}_input", table_name))
+            .field(InputValue::new("id", TypeRef::named_nn(TypeRef::INT)));
+
+        let table = self.clone();
+
+        let view_query = Field::new(
+            "view",
+            TypeRef::named(format!("{}_node", table_name)),
+            move |ctx| view_resolver(table.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, view_query))
     }
 }

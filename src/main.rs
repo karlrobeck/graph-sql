@@ -1,6 +1,6 @@
 use async_graphql::{
     Value,
-    dynamic::{Field, FieldFuture, FieldValue, Object, Schema, TypeRef},
+    dynamic::{Field, FieldFuture, Object, Schema, TypeRef},
     http::GraphiQLSource,
 };
 use async_graphql_axum::GraphQL;
@@ -12,9 +12,13 @@ use sea_query::Iden;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 
-use crate::{resolvers::list_resolver, types::SqliteTable};
+use crate::{
+    traits::{ToGraphqlMutations, ToGraphqlNode, ToGraphqlQueries},
+    types::SqliteTable,
+};
 
 mod resolvers;
+mod traits;
 mod types;
 
 async fn graphiql() -> impl IntoResponse {
@@ -22,7 +26,7 @@ async fn graphiql() -> impl IntoResponse {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> async_graphql::Result<()> {
     let db = SqlitePool::connect("sqlite://:memory:").await?;
 
     sqlx::migrate!("./migrations")
@@ -39,24 +43,28 @@ async fn main() -> anyhow::Result<()> {
     let mut inputs = vec![];
 
     for table in tables {
-        let table_obj = table.to_graphql_node();
+        let table_obj = table.to_node()?;
         let name = table.table_name();
 
-        let insert_mutation = table.to_graphql_insert_mutation();
-        let update_mutation = table.to_graphql_update_mutation();
-        let delete_mutation = table.to_graphql_delete_mutation();
+        let insert_mutation = table.to_insert_mutation()?;
+        let update_mutation = table.to_update_mutation()?;
+        let delete_mutation = table.to_delete_mutation()?;
 
-        let table_obj = table_obj
-            .field(table.to_graphql_list_query())
-            .field(table.to_graphql_view_query());
+        let list_query = table.to_list_query()?;
+        let view_query = table.to_view_query()?;
+
+        let table_obj = table_obj.field(list_query.1).field(view_query.1);
 
         mutation_object = mutation_object
             .field(insert_mutation.1)
             .field(update_mutation.1)
-            .field(delete_mutation);
+            .field(delete_mutation.1);
 
         inputs.push(insert_mutation.0);
         inputs.push(update_mutation.0);
+        inputs.push(delete_mutation.0);
+        inputs.push(list_query.0);
+        inputs.push(view_query.0);
 
         query_object = query_object.field(Field::new(
             name.to_string(),

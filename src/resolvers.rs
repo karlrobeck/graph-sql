@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use async_graphql::{
     Value,
     dynamic::{FieldFuture, ResolverContext},
@@ -44,8 +45,11 @@ pub fn view_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> F
 
         let id = ctx
             .args
-            .get("id")
+            .get("input")
             .ok_or(anyhow::anyhow!("Unable to get id"))?
+            .object()?
+            .get("id")
+            .ok_or(anyhow!("Unable to get id"))?
             .i64()?;
 
         let table_name = table_info.table_name();
