@@ -255,118 +255,134 @@ That's it! graph-sql automatically:
 
 ## 📚 Examples
 
-Perfect for high-performance APIs, secure data gateways, and transforming existing databases into scalable GraphQL services with memory-safe guarantees.
-
-🚀 **NEW**: graph-sql is now available as a standalone CLI application! Install it globally and instantly serve any SQLite database as a GraphQL API.
-
 For detailed documentation and more queries, see the [examples directory](./examples/).
 
-## 📦 Installation
+### **Running Examples**
 
-### **CLI Application (Recommended)**
-
-Install graph-sql globally using cargo:
+To run the included examples:
 
 ```bash
-cargo install --git https://github.com/karlrobeck/graph-sql.git
+# Navigate to an example directory
+cd examples/blog
+
+# Run the example
+cargo run
+
+# Open http://localhost:8000 for GraphiQL interface
 ```
 
-**Quick Start**:
-```bash
-# Serve any SQLite database as GraphQL API
-graph-sql serve -d "sqlite://my_database.db" -p 8000
+### **Example Overview**
 
-# Introspect and view schema
-graph-sql introspect -d "sqlite://my_database.db"
+- **Blog System** - Complete blog with posts, authors, and comments
+- **E-commerce** - Product catalog with categories and orders  
+- **Library** - Book management with authors and borrowing
+- **Task Manager** - Todo application with users and assignments
 
-# With migrations
-graph-sql serve -d "sqlite://my_database.db" -m "./migrations"
-```
+### **Quick Example - Blog System**
 
-### **CLI Usage**
+The blog example demonstrates a complete content management system with relationships between posts, authors, and comments.
 
-```bash
-# Start GraphQL server (creates local.db if not exists)
-graph-sql serve
+## 🏗️ GraphQL Schema Structure
 
-# Custom database and port
-graph-sql serve -d "sqlite://data/app.db" -p 3000 --host 127.0.0.1
+graph-sql automatically generates GraphQL types based on your SQLite schema:
 
-# Run with migrations
-graph-sql serve -d "sqlite://app.db" -m "./migrations"
+- **Tables** → GraphQL Object Types
+- **Columns** → GraphQL Fields with appropriate types
+- **Foreign Keys** → GraphQL Object Relationships
+- **Primary Keys** → ID fields
+- **Nullable Columns** → Optional GraphQL fields
 
-# Introspect schema to stdout
-graph-sql introspect -d "sqlite://app.db"
+## 🗄️ Database Schema Mapping
 
-# Save schema to file
-graph-sql introspect -d "sqlite://app.db" -o schema.graphql
+| SQLite Type | GraphQL Type |
+|-------------|--------------|
+| INTEGER     | Int          |
+| TEXT        | String       |
+| REAL        | Float        |
+| BLOB        | String       |
+| BOOLEAN     | Boolean      |
 
-# Use environment variable
-export DATABASE_URL="sqlite://production.db"
-graph-sql serve  # Uses DATABASE_URL
-```
+## 📖 Example Usage
 
-**CLI Features**:
-- 🗄️ **Automatic database creation** - Creates SQLite files if they don't exist
-- 🔧 **Migration support** - Optional migration directory with `-m` flag
-- 🌍 **Environment variables** - Uses `DATABASE_URL` environment variable
-- 📄 **Schema export** - Export GraphQL schema to files with `introspect` command
-- ⚙️ **Flexible configuration** - Customize host, port, and database URL
+Once your server is running, you can execute GraphQL queries:
 
-### **As a Library**
+```graphql
+# Query all posts with author information
+query {
+  posts {
+    id
+    title
+    content
+    author {
+      name
+      email
+    }
+  }
+}
 
-Add graph-sql to your `Cargo.toml`:
-
-```toml
-[dependencies]
-graph-sql = { git = "https://github.com/karlrobeck/graph-sql.git" }
-async-graphql = "7.0.17"
-async-graphql-axum = "7.0.17"
-axum = "0.8.4"
-sqlx = { version = "0.8.6", features = ["runtime-tokio-native-tls", "sqlite", "migrate"] }
-tokio = { version = "1.47.0", features = ["full"] }
-```
-
-## 🔧 Library API
-
-When using graph-sql as a library, it provides a simple, elegant API for integrating GraphQL into your Rust applications:
-
-### **Core Functions**
-
-```rust
-// Main introspection function
-pub async fn introspect(pool: &SqlitePool) -> Result<SchemaBuilder, Error>
-
-// Schema builder for customization
-impl SchemaBuilder {
-    pub fn finish(self) -> Result<Schema<Query, Mutation, EmptySubscription>, Error>
-    // Additional customization methods available
+# Create a new post
+mutation {
+  createPost(
+    title: "My New Post"
+    content: "This is the content"
+    authorId: 1
+  ) {
+    id
+    title
+  }
 }
 ```
 
-### **Integration Patterns**
+## ⚙️ Configuration
 
-**🔥 Minimal Setup** (3 lines):
-```rust
-let db = SqlitePool::connect("sqlite://app.db").await?;
-let schema = graph_sql::introspect(&db).await?.finish()?;
-let app = Router::new().route("/graphql", post_service(GraphQL::new(schema)));
+graph-sql supports configuration through:
+
+- **Command line arguments** - Direct parameter passing
+- **Environment variables** - `DATABASE_URL` for database connection
+- **Configuration files** - Future support planned
+
+## 🏛️ Architecture
+
+graph-sql follows a database-first architecture:
+
+1. **Introspection Layer** - Analyzes SQLite schema
+2. **Type Generation** - Creates GraphQL types from database structure
+3. **Resolver Generation** - Builds CRUD operations automatically
+4. **Gateway Layer** - Stateless GraphQL server
+
+## 🛠️ Development
+
+To contribute to graph-sql:
+
+```bash
+# Clone the repository
+git clone https://github.com/karlrobeck/graph-sql.git
+cd graph-sql
+
+# Run tests
+cargo test
+
+# Run examples
+cd examples/blog
+cargo run
 ```
 
-**🛠️ With Custom Configuration**:
-```rust
-let schema = graph_sql::introspect(&db)
-    .await?
-    // Add custom resolvers, middleware, etc.
-    .finish()?;
-```
+## ⚠️ Current Limitations
 
+- SQLite only (PostgreSQL and MySQL support planned)
+- Basic authentication (OAuth and JWT support planned)
+- Limited custom scalar types
+- No subscription support yet
 
-**🔄 With Hot Reloading** (Development):
-```rust
-// Reintrospect when schema changes
-let schema = graph_sql::introspect(&db).await?.finish()?;
-```
+## 🗺️ Roadmap
+
+- [ ] PostgreSQL and MySQL support
+- [ ] Advanced authentication and authorization
+- [ ] Custom scalar types
+- [ ] GraphQL subscriptions
+- [ ] Performance optimizations
+- [ ] Docker containerization
+- [ ] Cloud deployment guides
 
 ## 🤝 Contributing
 
