@@ -4,6 +4,8 @@ port = 8000
 
 [graphql]
 enable-playground = true
+depth = 5
+complexity = 5
 
 [database]
 use-env = true

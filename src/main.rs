@@ -14,10 +14,7 @@ use sea_query::Iden;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 
-use crate::{
-    traits::{ToGraphqlMutations, ToGraphqlNode, ToGraphqlObject, ToGraphqlQueries},
-    types::SqliteTable,
-};
+use crate::{traits::ToGraphqlObject, types::SqliteTable};
 
 mod resolvers;
 mod traits;
