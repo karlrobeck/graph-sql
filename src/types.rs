@@ -7,8 +7,8 @@ use sqlx::{SqlitePool, prelude::FromRow};
 
 use crate::{
     resolvers::{
-        column_resolver, delete_resolver, insert_resolver, list_resolver, update_resolver,
-        view_resolver,
+        column_resolver, delete_resolver, foreign_key_resolver, insert_resolver, list_resolver,
+        update_resolver, view_resolver,
     },
     traits::{
         ToGraphqlFieldExt, ToGraphqlInputValueExt, ToGraphqlMutations, ToGraphqlNode,
@@ -20,6 +20,7 @@ use crate::{
 pub struct SqliteTable {
     pub table_info: TableInfo,
     pub column_info: Vec<ColumnDef>,
+    pub foreign_key_info: Vec<ForeignKeyInfo>,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -36,6 +37,13 @@ pub struct ColumnInfo {
     pub dflt_value: Option<String>,
 }
 
+#[derive(Debug, Clone, FromRow)]
+pub struct ForeignKeyInfo {
+    pub table: String,
+    pub from: String,
+    pub to: String,
+}
+
 impl SqliteTable {
     pub async fn introspect(db: &SqlitePool) -> anyhow::Result<Vec<Self>> {
         let tables = sqlx::query_as::<_, TableInfo>(
@@ -50,7 +58,8 @@ impl SqliteTable {
 
         let mut sqlite_tables = Vec::new();
 
-        for table in tables {
+        // columns
+        for table in tables.iter() {
             let columns = sqlx::query_as::<_, ColumnInfo>(
                 r#"
               select name,type,"notnull",pk,dflt_value from pragma_table_info(?)
@@ -88,11 +97,23 @@ impl SqliteTable {
             })
             .collect::<Vec<_>>();
 
+            let query = r#"
+                select "table","from","to" from pragma_foreign_key_list(?)
+            "#;
+
+            let foreign_keys = sqlx::query_as::<_, ForeignKeyInfo>(query)
+                .bind(table.name.clone())
+                .fetch_all(db)
+                .await?;
+
             sqlite_tables.push(SqliteTable {
-                table_info: table,
+                table_info: table.clone(),
                 column_info: columns,
+                foreign_key_info: foreign_keys,
             });
         }
+
+        println!("{:#?}", sqlite_tables);
 
         Ok(sqlite_tables)
     }
@@ -205,14 +226,44 @@ impl ToGraphqlTypeRefExt for ColumnDef {
 }
 
 impl ToGraphqlFieldExt for ColumnDef {
-    fn to_field(&self, table_name: String) -> async_graphql::Result<Field> {
+    fn to_field(
+        &self,
+        table_name: String,
+        f_col: Option<ForeignKeyInfo>,
+    ) -> async_graphql::Result<Field> {
         let column_name = self.get_column_name();
         let column_def = self.clone();
         let table_name = table_name.clone();
 
-        Ok(Field::new(&column_name, self.to_type_ref()?, move |ctx| {
-            column_resolver(table_name.clone(), column_def.clone(), ctx)
-        }))
+        if let Some(f_col) = f_col {
+            let stripped_name = if column_name.ends_with("_id") {
+                column_name.trim_end_matches("_id").to_string()
+            } else {
+                column_name.clone()
+            };
+
+            let type_ref = if self
+                .get_column_spec()
+                .iter()
+                .find(|spec| {
+                    matches!(spec, sea_query::ColumnSpec::NotNull)
+                        || !matches!(spec, ColumnSpec::Default(_))
+                })
+                .is_some()
+            {
+                TypeRef::named_nn(format!("{}_node", f_col.table))
+            } else {
+                TypeRef::named(format!("{}_node", f_col.table))
+            };
+
+            Ok(Field::new(&stripped_name, type_ref, move |ctx| {
+                foreign_key_resolver(table_name.clone(), f_col.clone(), ctx)
+            }))
+        } else {
+            Ok(Field::new(&column_name, self.to_type_ref()?, move |ctx| {
+                column_resolver(table_name.clone(), column_def.clone(), ctx)
+            }))
+        }
     }
 }
 
@@ -308,7 +359,15 @@ impl ToGraphqlNode for SqliteTable {
         let mut node_obj = Object::new(format!("{}_node", table_name.clone()));
 
         for col in self.column_info.clone() {
-            node_obj = node_obj.field(col.to_field(table_name.clone())?);
+            if let Some(f_col) = self
+                .foreign_key_info
+                .iter()
+                .find(|f_col| f_col.from == col.get_column_name())
+            {
+                node_obj = node_obj.field(col.to_field(table_name.clone(), Some(f_col.clone()))?);
+            } else {
+                node_obj = node_obj.field(col.to_field(table_name.clone(), None)?);
+            }
         }
 
         Ok(node_obj)

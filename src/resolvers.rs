@@ -6,7 +6,7 @@ use async_graphql::{
 use sea_query::{Alias, ColumnDef, ColumnSpec, Expr, Query, SqliteQueryBuilder};
 use sqlx::SqlitePool;
 
-use crate::types::{SqliteTable, ToSeaQueryValue};
+use crate::types::{ForeignKeyInfo, SqliteTable, ToSeaQueryValue};
 
 pub fn list_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
     FieldFuture::new(async move {
@@ -71,6 +71,73 @@ pub fn view_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> F
             .map(|val| Value::from_json(val).unwrap())?;
 
         Ok(Some(result))
+    })
+}
+
+pub fn foreign_key_resolver<'a>(
+    table_name: String,
+    f_col: ForeignKeyInfo,
+    ctx: ResolverContext<'a>,
+) -> FieldFuture<'a> {
+    FieldFuture::new(async move {
+        let db = ctx.data::<SqlitePool>()?;
+
+        let parent_value = ctx
+            .parent_value
+            .as_value()
+            .ok_or(anyhow::anyhow!("Unable to get parent value"))?
+            .clone();
+
+        let parent_value = parent_value.into_json()?;
+
+        let json_object = parent_value
+            .as_object()
+            .ok_or(anyhow::anyhow!("Unable to get json object"))?;
+
+        let pk_name = json_object
+            .get("name")
+            .map(|val| val.as_str())
+            .ok_or(anyhow::anyhow!("Unable to get primary key column name"))?
+            .ok_or(anyhow::anyhow!("Unable to cast column name as str"))?;
+
+        let pk_id = json_object
+            .get("id")
+            .map(|v| v.as_i64())
+            .ok_or(anyhow::anyhow!("Unable to get primary key id"))?
+            .ok_or(anyhow::anyhow!("Unable to cast id into i64"))?;
+
+        let query = Query::select()
+            .from_as(Alias::new(f_col.table.clone()), Alias::new("f"))
+            .expr(Expr::cust_with_values(
+                format!("json_object(?,f.{})", f_col.to),
+                [f_col.to.clone()],
+            ))
+            .inner_join(
+                Alias::new(table_name.clone()),
+                Expr::col((
+                    Alias::new(table_name.clone()),
+                    Alias::new(f_col.from.clone()),
+                ))
+                .equals((Alias::new("f"), Alias::new(f_col.to.clone()))),
+            )
+            .and_where(Expr::col((Alias::new(table_name.clone()), Alias::new(pk_name))).eq(pk_id))
+            .to_string(SqliteQueryBuilder);
+
+        println!("{:#?}", query);
+
+        let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
+            .fetch_one(db)
+            .await
+            .map(|(map_val,)| map_val.as_object().unwrap().clone())
+            .map(|val| {
+                serde_json::json!({
+                    "name":f_col.to,
+                    "id":val.get(&f_col.to).unwrap()
+                })
+            })
+            .map(|val| Value::from_json(val))?;
+
+        Ok(Some(result?))
     })
 }
 

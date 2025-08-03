@@ -9,6 +9,8 @@ and generates a type-safe GraphQL schema with zero configuration.
   structure
 - **Full CRUD Operations**: Complete Create, Read, Update, Delete support
   through GraphQL mutations and queries
+- **Foreign Key Relationships**: Automatic detection and mapping of foreign key
+  relationships to GraphQL object relationships
 - **Type-Safe Schema**: Generates GraphQL types that match your database schema
 - **Dynamic Schema Generation**: Creates resolvers and types at runtime
 - **Built-in GraphiQL**: Interactive GraphQL playground included
@@ -48,24 +50,79 @@ cargo install --git https://github.com/karlrobeck/graph-sql.git
 
 ## 📖 How It Works
 
-graph-sql follows a simple workflow:
+graph-sql follows a comprehensive workflow:
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[SQLite Database] --> B[Schema Introspection]
-    B --> C[Type Generation]
-    C --> D[Resolver Creation]
-    D --> E[GraphQL Server]
-    E --> F[GraphiQL Interface]
+    B --> B1[Table Discovery<br/>PRAGMA table_list]
+    B --> B2[Column Analysis<br/>PRAGMA table_info]
+    B --> B3[Foreign Key Detection<br/>PRAGMA foreign_key_list]
+    
+    B1 --> C[Type Generation]
+    B2 --> C
+    B3 --> C
+    
+    C --> C1[Scalar Type Mapping<br/>TEXT → String, INTEGER → Int]
+    C --> C2[Node Object Creation<br/>table_name_node types]
+    C --> C3[Foreign Key Relationships<br/>*_id fields → relationship fields]
+    
+    C1 --> D[Resolver Creation]
+    C2 --> D
+    C3 --> D
+    
+    D --> D1[Query Resolvers<br/>list & view operations]
+    D --> D2[Mutation Resolvers<br/>insert, update, delete]
+    D --> D3[Field Resolvers<br/>column & foreign key]
+    
+    D1 --> E[GraphQL Schema Assembly]
+    D2 --> E
+    D3 --> E
+    
+    E --> E1[Query Type Registration]
+    E --> E2[Mutation Type Registration] 
+    E --> E3[Node Types Registration]
+    E --> E4[Input Types Registration]
+    
+    E1 --> F[Axum GraphQL Server]
+    E2 --> F
+    E3 --> F
+    E4 --> F
+    
+    F --> G[GraphiQL Interface<br/>localhost:8000]
+    
+    style A fill:#e1f5fe
+    style C3 fill:#fff3e0
+    style D3 fill:#fff3e0
+    style G fill:#e8f5e8
 ```
 
-1. **Introspection**: Analyzes your SQLite database schema using `PRAGMA`
-   statements
-2. **Type Generation**: Creates GraphQL types based on table columns and their
-   SQLite types
-3. **Resolver Creation**: Generates dynamic resolvers for querying and mutating
-   data
-4. **Server Launch**: Starts an Axum-based GraphQL server with GraphiQL
+The complete workflow includes:
+
+1. **Schema Introspection**: Analyzes SQLite database structure using multiple
+   `PRAGMA` statements
+   - Discovers all tables and their metadata
+   - Extracts column definitions, types, and constraints
+   - Identifies foreign key relationships between tables
+
+2. **Type Generation**: Creates comprehensive GraphQL type system
+   - Maps SQLite column types to GraphQL scalars
+   - Generates node objects for each table with proper field types
+   - Automatically converts foreign key columns to relationship fields
+
+3. **Resolver Creation**: Builds dynamic resolvers for all operations
+   - List/view query resolvers with pagination support
+   - CRUD mutation resolvers for data manipulation
+   - Individual field resolvers for columns and foreign key relationships
+
+4. **Schema Assembly**: Orchestrates complete GraphQL schema construction
+   - Registers all query operations under nested table structure
+   - Adds mutation operations to the root mutation type
+   - Integrates node types and input types into the schema
+
+5. **Server Launch**: Deploys the complete GraphQL API
+   - Starts Axum-based web server with the dynamic schema
+   - Provides GraphiQL interface for interactive development and testing
 
 ## 🏗️ GraphQL Schema Structure
 
@@ -82,6 +139,9 @@ type tableName_node {
   column1: Type
   column2: Type
   
+  # Foreign key relationships (automatically detected)
+  relatedEntity: relatedEntity_node  # foreign_key_id becomes relatedEntity
+  
   # Query operations
   list(input: list_tableName_input!): [tableName_node]
   view(input: view_tableName_input!): tableName_node
@@ -94,6 +154,8 @@ This structure allows for intuitive querying where you can:
 - **List multiple records**:
   `cake { list(input: {page: 1, limit: 10}) { ... } }`
 - **View specific record**: `cake { view(input: {id: 3}) { ... } }`
+- **Follow relationships**:
+  `cake_filling { view(input: {id: 1}) { filling { name } } }`
 - **Combine operations**: Get both list and specific views in a single query
 
 ## 🗄️ Database Schema Mapping
@@ -113,9 +175,18 @@ graph-sql automatically maps SQLite types to GraphQL types:
 - Columns with `NOT NULL` constraint → Non-nullable GraphQL fields
 - Nullable columns → Nullable GraphQL fields
 
+### Foreign Key Relationships
+
+- Columns ending in `_id` with matching foreign key constraints are
+  automatically converted to relationship fields
+- The `_id` suffix is stripped from the field name in GraphQL
+- Foreign key fields resolve to the related table's node type instead of the raw
+  ID
+- **Example**: `category_id` column becomes `category: category_node!` field
+
 ## 📊 Example Usage
 
-Given this SQLite schema:
+Given this SQLite schema with foreign key relationships:
 
 ```sql
 CREATE TABLE cake(
@@ -133,6 +204,15 @@ CREATE TABLE filling(
   calories INTEGER,
   fat REAL
 );
+
+CREATE TABLE cake_filling(
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  cake_id INTEGER NOT NULL,
+  filling_id INTEGER NOT NULL,
+  amount INTEGER,
+  FOREIGN KEY (cake_id) REFERENCES cake(id),
+  FOREIGN KEY (filling_id) REFERENCES filling(id)
+);
 ```
 
 graph-sql generates this GraphQL schema:
@@ -141,6 +221,7 @@ graph-sql generates this GraphQL schema:
 type Query {
   cake: cake_node
   filling: filling_node
+  cake_filling: cake_filling_node
 }
 
 type Mutation {
@@ -150,6 +231,9 @@ type Mutation {
   insert_filling(input: insert_filling_input!): filling_node!
   update_filling(id: Int!, input: update_filling_input!): filling_node!
   delete_filling(id: Int!): DeleteResult!
+  insert_cake_filling(input: insert_cake_filling_input!): cake_filling_node!
+  update_cake_filling(id: Int!, input: update_cake_filling_input!): cake_filling_node!
+  delete_cake_filling(id: Int!): DeleteResult!
 }
 
 type cake_node {
@@ -172,12 +256,28 @@ type filling_node {
   view(input: view_filling_input!): filling_node
 }
 
+type cake_filling_node {
+  id: Int!
+  amount: Int
+  # Foreign key relationships (automatically detected)
+  cake: cake_node!        # cake_id becomes cake field
+  filling: filling_node!  # filling_id becomes filling field
+  list(input: list_cake_filling_input!): [cake_filling_node]
+  view(input: view_cake_filling_input!): cake_filling_node
+}
+
 input insert_cake_input {
   name: String!
   price: Float
   is_vegan: Int
   created_at: String
   description: String
+}
+
+input insert_cake_filling_input {
+  cake_id: Int!     # Raw foreign key values in mutations
+  filling_id: Int!
+  amount: Int
 }
 
 input update_cake_input {
@@ -205,37 +305,114 @@ type DeleteResult {
 ### Example Queries
 
 ```graphql
-# Get all cakes with pagination
-query {
+# Get cakes with basic info and foreign key relationships
+{
   cake {
-    list(input: { page: 1, limit: 10 }) {
+    view(input: {id: 3}) {
+      id
+      name
+    }
+    list(input: {page: 1, limit: 10}) {
       id
       name
       price
       is_vegan
     }
   }
-}
-
-# Get specific cake by ID
-query {
-  cake {
-    view(input: { id: 3 }) {
-      id
-      name
-      description
-      price
+  # Query cake filling relationships - demonstrates foreign key mapping
+  cake_filling {
+    view(input:{id:1}) {
+      amount
+      # Foreign key fields automatically resolve to related objects
+      filling {
+        name
+        fat
+        calories
+      }
     }
   }
 }
+```
 
-# Get fillings with nutritional info
+**Response:**
+
+```json
+{
+  "data": {
+    "cake": {
+      "view": {
+        "id": 3,
+        "name": "Vegan Carrot Cake"
+      },
+      "list": [
+        {
+          "id": 1,
+          "name": "Chocolate Fudge Cake",
+          "price": 25.99,
+          "is_vegan": 0
+        },
+        {
+          "id": 2,
+          "name": "Vanilla Bean Delight",
+          "price": 22.5,
+          "is_vegan": 0
+        },
+        {
+          "id": 3,
+          "name": "Vegan Carrot Cake",
+          "price": 28,
+          "is_vegan": 1
+        },
+        {
+          "id": 4,
+          "name": "Red Velvet Supreme",
+          "price": 30,
+          "is_vegan": 0
+        },
+        {
+          "id": 5,
+          "name": "Lemon Zest Cake",
+          "price": 24.75,
+          "is_vegan": 1
+        }
+      ]
+    },
+    "cake_filling": {
+      "view": {
+        "amount": 200,
+        "filling": {
+          "name": "Chocolate Ganache",
+          "fat": 12.5,
+          "calories": 180
+        }
+      }
+    }
+  }
+}
+```
+
+```graphql
+# Complex relationship query - get cake with all its fillings
 query {
-  filling {
-    list(input: { page: 1, limit: 5 }) {
+  cake {
+    view(input: { id: 1 }) {
+      id
       name
-      calories
-      fat
+      price
+    }
+  }
+  cake_filling {
+    list(input: { page: 1, limit: 10 }) {
+      amount
+      cake {
+        name
+        price
+      }
+      filling {
+        name
+        calories
+        fat
+      }
     }
   }
 }
@@ -280,6 +457,39 @@ mutation {
   }
 }
 
+# Insert a new filling
+mutation {
+  insert_filling(input: {
+    name: "Vanilla Cream"
+    calories: 150
+    fat: 8.5
+  }) {
+    id
+    name
+  }
+}
+
+# Create a cake-filling relationship using foreign key IDs
+mutation {
+  insert_cake_filling(input: {
+    cake_id: 1        # Reference to existing cake
+    filling_id: 2     # Reference to existing filling  
+    amount: 150       # Additional relationship data
+  }) {
+    id
+    amount
+    # Foreign key fields resolve to full objects
+    cake {
+      name
+      price
+    }
+    filling {
+      name
+      calories
+    }
+  }
+}
+
 # Update an existing cake
 mutation {
   update_cake(id: 1, input: {
@@ -296,18 +506,6 @@ mutation {
 mutation {
   delete_cake(id: 1) {
     rows_affected
-  }
-}
-
-# Insert a new filling
-mutation {
-  insert_filling(input: {
-    name: "Vanilla Cream"
-    calories: 150
-    fat: 8.5
-  }) {
-    id
-    name
   }
 }
 ```
@@ -397,17 +595,18 @@ migrations/
 ## 🚧 Current Limitations
 
 - **SQLite only**: Designed specifically for SQLite databases
-- **No relationships**: Foreign key relationships not yet mapped to GraphQL
 - **Simple types**: Complex SQLite types map to basic GraphQL types
 - **Basic pagination**: List queries use simple page/limit pagination
 - **No subscriptions**: Real-time updates not yet supported
 - **Primary key restriction**: Only `i64` (INTEGER) primary keys are currently
   supported
+- **Foreign key naming convention**: Requires `_id` suffix for automatic
+  relationship detection
 
 ## 🛣️ Roadmap
 
 - [x] **Mutations support**: INSERT, UPDATE, DELETE operations ✅
-- [ ] **Relationship mapping**: Foreign keys → GraphQL relationships
+- [x] **Relationship mapping**: Foreign keys → GraphQL relationships ✅
 - [ ] **Subscriptions**: Real-time updates
 - [ ] **Advanced filtering**: WHERE clauses and complex query conditions
 - [ ] **Improved pagination**: Cursor-based pagination and sorting
