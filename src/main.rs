@@ -8,10 +8,6 @@ use clap::{Parser, Subcommand};
 use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase};
 use tokio::net::TcpListener;
 
-mod resolvers;
-mod traits;
-mod types;
-
 #[derive(Parser, Debug)]
 #[command(version, about = "A GraphQL server for SQL databases", long_about = None)]
 struct CLI {

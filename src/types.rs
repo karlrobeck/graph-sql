@@ -3,7 +3,7 @@ use async_graphql::dynamic::{
     Field, InputObject, InputValue, Object, Scalar, TypeRef, ValueAccessor,
 };
 use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, Iden, SimpleExpr};
-use sqlx::{SqlitePool, prelude::FromRow};
+use sqlx::prelude::FromRow;
 
 use crate::{
     resolvers::{
@@ -45,77 +45,6 @@ pub struct ForeignKeyInfo {
 }
 
 impl SqliteTable {
-    pub async fn introspect(db: &SqlitePool) -> anyhow::Result<Vec<Self>> {
-        let tables = sqlx::query_as::<_, TableInfo>(
-            "SELECT name,sql FROM sqlite_master WHERE type='table' and name not in  ('_sqlx_migrations','sqlite_sequence')",
-        )
-        .fetch_all(db)
-        .await?;
-
-        if tables.is_empty() {
-            return Err(anyhow::anyhow!("No tables found in the database"));
-        }
-
-        let mut sqlite_tables = Vec::new();
-
-        // columns
-        for table in tables.iter() {
-            let columns = sqlx::query_as::<_, ColumnInfo>(
-                r#"
-              select name,type,"notnull",pk,dflt_value from pragma_table_info(?)
-            "#,
-            )
-            .bind(&table.name)
-            .fetch_all(db)
-            .await?
-            .into_iter()
-            .map(|col| {
-                let mut col_def = ColumnDef::new(Alias::new(col.name));
-
-                match col.r#type.to_lowercase().as_str() {
-                    "text" => col_def.text(),
-                    "real" | "numeric" => col_def.float(),
-                    "blob" => col_def.blob(),
-                    "boolean" => col_def.boolean(),
-                    "integer" => col_def.integer(),
-                    _ => col_def.text(),
-                };
-
-                if col.notnull == 1 {
-                    col_def.not_null();
-                }
-
-                if col.pk == 1 {
-                    col_def.primary_key();
-                }
-
-                if col.dflt_value.is_some() {
-                    col_def.default("");
-                }
-
-                col_def
-            })
-            .collect::<Vec<_>>();
-
-            let query = r#"
-                select "table","from","to" from pragma_foreign_key_list(?)
-            "#;
-
-            let foreign_keys = sqlx::query_as::<_, ForeignKeyInfo>(query)
-                .bind(table.name.clone())
-                .fetch_all(db)
-                .await?;
-
-            sqlite_tables.push(SqliteTable {
-                table_info: table.clone(),
-                column_info: columns,
-                foreign_key_info: foreign_keys,
-            });
-        }
-
-        Ok(sqlite_tables)
-    }
-
     // helpers
     pub fn primary_key(&self) -> Result<&ColumnDef> {
         self.column_info
