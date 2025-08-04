@@ -3,9 +3,17 @@ host = "0.0.0.0"
 port = 8000
 
 [graphql]
+enable-uploading = true
 enable-playground = true
-depth = 5
-complexity = 5
+limit-depth = 5
+limit-complexity = 5
+limit-recursive-depth = 32
+limit-directives = 0
+disable-suggestions = false
+disable-introspection = false
+introspection-only = true
+enable-federation = false
+
 
 [database]
 use-env = true
