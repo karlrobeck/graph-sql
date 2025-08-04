@@ -171,7 +171,7 @@ graph-sql is specifically designed for **heavy-load scenarios**:
 Install graph-sql globally using cargo:
 
 ```bash
-cargo install --git https://github.com/karlrobeck/graph-sql.git
+cargo install graph-sql --git https://github.com/karlrobeck/graph-sql.git
 ```
 
 **Quick Start**:
@@ -392,7 +392,7 @@ services.
 
 ```bash
 # Install globally
-cargo install --git https://github.com/karlrobeck/graph-sql.git
+cargo install graph-sql --git https://github.com/karlrobeck/graph-sql.git
 
 # Create a config.toml file
 cat > config.toml << EOF
@@ -612,7 +612,7 @@ graph-sql follows a database-first architecture:
 
 ```bash
 # Install and run
-cargo install --git https://github.com/karlrobeck/graph-sql.git
+cargo install graph-sql --git https://github.com/karlrobeck/graph-sql.git
 graph-sql serve -d "sqlite://production.db" -p 8080
 ```
 
