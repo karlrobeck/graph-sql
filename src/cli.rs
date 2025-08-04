@@ -50,9 +50,19 @@ pub struct DatabaseConfig {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GraphQLConfig {
     #[serde(rename = "enable-playground")]
-    pub enable_playground: Option<bool>,
-    pub depth: Option<u32>,
-    pub complexity: Option<u32>,
+    pub enable_playground: bool,
+    pub depth: u32,
+    pub complexity: u32,
+}
+
+impl Default for GraphQLConfig {
+    fn default() -> Self {
+        Self {
+            enable_playground: true,
+            depth: 5,
+            complexity: 5,
+        }
+    }
 }
 
 impl Default for Config {
@@ -68,9 +78,9 @@ impl Default for Config {
                 migrations_path: None,
             },
             graphql: Some(GraphQLConfig {
-                enable_playground: Some(true),
-                depth: Some(5),
-                complexity: Some(5),
+                enable_playground: true,
+                depth: 5,
+                complexity: 5,
             }),
         }
     }
@@ -78,7 +88,7 @@ impl Default for Config {
 
 pub fn load_config(config_path: &str) -> anyhow::Result<Config> {
     debug!("Loading config from: {}", config_path);
-    
+
     if std::path::Path::new(config_path).exists() {
         info!("Config file found, loading from: {}", config_path);
         let config_content = std::fs::read_to_string(config_path)?;

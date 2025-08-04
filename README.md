@@ -1,17 +1,31 @@
 # graph-sql
 
-A high-performance Rust CLI tool and library that automatically introspects SQLite databases and generates complete GraphQL APIs with zero configuration. Built as a memory-safe alternative to traditional GraphQL servers, graph-sql acts as a lightweight gateway that pushes business logic to the database layer for maximum performance and simplicity.
+A high-performance Rust CLI tool and library that automatically introspects
+SQLite databases and generates complete GraphQL APIs with TOML-based
+configuration. Built as a memory-safe alternative to traditional GraphQL
+servers, graph-sql acts as a lightweight gateway that pushes business logic to
+the database layer for maximum performance and simplicity.
 
-🚀 **NEW**: graph-sql is now available as a standalone CLI application! Install it globally and instantly serve any SQLite database as a GraphQL API.
+🚀 **NEW**: graph-sql is now available as a standalone CLI application with TOML
+configuration! Create a simple config file and instantly serve any SQLite
+database as a GraphQL API.
 
-🔒 **Memory Safety**: Leverages Rust's zero-cost abstractions and memory safety guarantees to eliminate entire classes of bugs common in traditional API servers.
+🔒 **Memory Safety**: Leverages Rust's zero-cost abstractions and memory safety
+guarantees to eliminate entire classes of bugs common in traditional API
+servers.
 
-🏗️ **Database-First Architecture**: Acts as a stateless gateway/middleman, letting SQLite handle business logic, authorization, and data processing for optimal performance.
+🏗️ **Database-First Architecture**: Acts as a stateless gateway/middleman,
+letting SQLite handle business logic, authorization, and data processing for
+optimal performance.
 
-For detailed documentation and more queries, see the [examples directory](./examples/).
+For detailed documentation and more queries, see the
+[examples directory](./examples/).
 
-> **⚠️ Development Status**  
-> **This project is in active development.** Breaking changes may occur without notice as we rapidly iterate and improve the library. While the core functionality is stable, the API may evolve significantly. For production use, please pin to a specific commit and thoroughly test any updates.
+> **⚠️ Development Status**\
+> **This project is in active development.** Breaking changes may occur without
+> notice as we rapidly iterate and improve the library. While the core
+> functionality is stable, the API may evolve significantly. For production use,
+> please pin to a specific commit and thoroughly test any updates.
 
 ## 📋 Table of Contents
 
@@ -38,6 +52,9 @@ For detailed documentation and more queries, see the [examples directory](./exam
 - [Database Schema Mapping](#️-database-schema-mapping)
 - [Example Usage](#-example-usage)
 - [Configuration](#️-configuration)
+  - [Configuration Structure](#configuration-structure)
+  - [Configuration Options](#configuration-options)
+  - [Environment Variables](#environment-variables)
 - [Architecture](#️-architecture)
 - [Development](#-development)
 - [Current Limitations](#-current-limitations)
@@ -58,46 +75,72 @@ cargo install --git https://github.com/karlrobeck/graph-sql.git
 ```
 
 **Quick Start**:
+
 ```bash
-# Serve any SQLite database as GraphQL API
-graph-sql serve -d "sqlite://my_database.db" -p 8000
+# Serve any SQLite database as GraphQL API (uses default config.toml)
+graph-sql serve
+
+# Use custom config file
+graph-sql serve -c my-config.toml
 
 # Introspect and view schema
-graph-sql introspect -d "sqlite://my_database.db"
+graph-sql introspect
 
-# With migrations
-graph-sql serve -d "sqlite://my_database.db" -m "./migrations"
+# Save schema to file
+graph-sql introspect -o schema.graphql
 ```
 
 ### **CLI Usage**
 
+The CLI now uses TOML-based configuration for all settings. Create a
+`config.toml` file in your project directory:
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 8000
+
+[database]
+database-url = "sqlite://my_database.db"
+use-env = true  # Use DATABASE_URL environment variable if available
+migrations-path = "./migrations"
+
+[graphql]
+enable-playground = true
+depth = 5
+complexity = 5
+```
+
+**Basic Commands**:
+
 ```bash
-# Start GraphQL server (creates local.db if not exists)
+# Start GraphQL server (uses config.toml in current directory)
 graph-sql serve
 
-# Custom database and port
-graph-sql serve -d "sqlite://data/app.db" -p 3000 --host 127.0.0.1
-
-# Run with migrations
-graph-sql serve -d "sqlite://app.db" -m "./migrations"
+# Use custom config file
+graph-sql serve -c /path/to/my-config.toml
 
 # Introspect schema to stdout
-graph-sql introspect -d "sqlite://app.db"
+graph-sql introspect
 
 # Save schema to file
-graph-sql introspect -d "sqlite://app.db" -o schema.graphql
+graph-sql introspect -o schema.graphql
 
-# Use environment variable
+# Use environment variable (set use-env = true in config)
 export DATABASE_URL="sqlite://production.db"
-graph-sql serve  # Uses DATABASE_URL
+graph-sql serve
 ```
 
 **CLI Features**:
+
+- 📋 **TOML Configuration** - All settings defined in structured config files
 - 🗄️ **Automatic database creation** - Creates SQLite files if they don't exist
-- 🔧 **Migration support** - Optional migration directory with `-m` flag
-- 🌍 **Environment variables** - Uses `DATABASE_URL` environment variable
-- 📄 **Schema export** - Export GraphQL schema to files with `introspect` command
-- ⚙️ **Flexible configuration** - Customize host, port, and database URL
+- 🔧 **Migration support** - Optional migration directory path in config
+- 🌍 **Environment variables** - Uses `DATABASE_URL` when `use-env = true`
+- 📄 **Schema export** - Export GraphQL schema to files with `introspect`
+  command
+- ⚙️ **Flexible configuration** - Customize host, port, database URL, and
+  GraphQL settings
 
 ### **As a Library**
 
@@ -115,7 +158,8 @@ tokio = { version = "1.47.0", features = ["full"] }
 
 ## 🔧 Library API
 
-When using graph-sql as a library, it provides a simple, elegant API for integrating GraphQL into your Rust applications:
+When using graph-sql as a library, it provides a simple, elegant API for
+integrating GraphQL into your Rust applications:
 
 ### **Core Functions**
 
@@ -133,6 +177,7 @@ impl SchemaBuilder {
 ### **Integration Patterns**
 
 **🔥 Minimal Setup** (3 lines):
+
 ```rust
 let db = SqlitePool::connect("sqlite://app.db").await?;
 let schema = graph_sql::introspect(&db).await?.finish()?;
@@ -140,6 +185,7 @@ let app = Router::new().route("/graphql", post_service(GraphQL::new(schema)));
 ```
 
 **🛠️ With Custom Configuration**:
+
 ```rust
 let schema = graph_sql::introspect(&db)
     .await?
@@ -148,6 +194,7 @@ let schema = graph_sql::introspect(&db)
 ```
 
 **🔄 With Hot Reloading** (Development):
+
 ```rust
 // Reintrospect when schema changes
 let schema = graph_sql::introspect(&db).await?.finish()?;
@@ -165,33 +212,54 @@ graph-sql works seamlessly with popular Rust web frameworks:
 ### **Use Cases**
 
 Perfect for:
-- ⚡ **High-performance APIs** - Memory-safe GraphQL gateway for heavy-load scenarios
-- � **Secure data services** - Rust's memory safety eliminates common vulnerabilities
-- 🏗️ **Microservices architecture** - Stateless gateway enabling horizontal scaling
+
+- ⚡ **High-performance APIs** - Memory-safe GraphQL gateway for heavy-load
+  scenarios
+- � **Secure data services** - Rust's memory safety eliminates common
+  vulnerabilities
+- 🏗️ **Microservices architecture** - Stateless gateway enabling horizontal
+  scaling
 - �🛠️ **Admin panels** - Auto-generated CRUD interfaces for content management
-- 📊 **Data exploration** - Interactive GraphiQL interface for database exploration
-- 🔄 **Legacy modernization** - Add secure GraphQL layer to existing SQLite applications
-- 🏭 **Production workloads** - Single binary deployment for enterprise environments
-- 📱 **Mobile backends** - High-performance API generation for mobile applications
+- 📊 **Data exploration** - Interactive GraphiQL interface for database
+  exploration
+- 🔄 **Legacy modernization** - Add secure GraphQL layer to existing SQLite
+  applications
+- 🏭 **Production workloads** - Single binary deployment for enterprise
+  environments
+- 📱 **Mobile backends** - High-performance API generation for mobile
+  applications
 
 ## 📖 How It Works
 
-graph-sql automatically transforms your SQLite databases into modern GraphQL services.
+graph-sql automatically transforms your SQLite databases into modern GraphQL
+services.
 
 ## 🚀 Features
 
-- **Memory Safety**: Rust's zero-cost abstractions eliminate buffer overflows, memory leaks, and other common API server vulnerabilities
-- **High Performance**: Designed for heavy-load scenarios with minimal resource overhead and efficient concurrency
-- **Zero Configuration**: Automatically introspects your SQLite database structure with no setup required
-- **Database-First Architecture**: Business logic lives in SQLite, not the application layer, for better performance and consistency
-- **Stateless Gateway**: Pure middleman design enabling horizontal scaling and simple deployment
-- **Full CRUD Operations**: Complete Create, Read, Update, Delete support through GraphQL mutations and queries
-- **Foreign Key Relationships**: Automatic detection and mapping of foreign key relationships to GraphQL object relationships
-- **Type-Safe Schema**: Generates GraphQL types that match your database schema with proper nullability
-- **Dynamic Schema Generation**: Creates resolvers and types at runtime based on database introspection
-- **Built-in GraphiQL**: Interactive GraphQL playground included for development and testing
-- **Single Binary Deployment**: No runtime dependencies or complex installation requirements
-- **SQLite Extensions**: Future support for sqlean and other SQLite extensions for advanced functionality
+- **Memory Safety**: Rust's zero-cost abstractions eliminate buffer overflows,
+  memory leaks, and other common API server vulnerabilities
+- **High Performance**: Designed for heavy-load scenarios with minimal resource
+  overhead and efficient concurrency
+- **TOML Configuration**: Simple, structured configuration files for all server
+  and database settings
+- **Database-First Architecture**: Business logic lives in SQLite, not the
+  application layer, for better performance and consistency
+- **Stateless Gateway**: Pure middleman design enabling horizontal scaling and
+  simple deployment
+- **Full CRUD Operations**: Complete Create, Read, Update, Delete support
+  through GraphQL mutations and queries
+- **Foreign Key Relationships**: Automatic detection and mapping of foreign key
+  relationships to GraphQL object relationships
+- **Type-Safe Schema**: Generates GraphQL types that match your database schema
+  with proper nullability
+- **Dynamic Schema Generation**: Creates resolvers and types at runtime based on
+  database introspection
+- **Built-in GraphiQL**: Interactive GraphQL playground included for development
+  and testing
+- **Single Binary Deployment**: No runtime dependencies or complex installation
+  requirements
+- **SQLite Extensions**: Future support for sqlean and other SQLite extensions
+  for advanced functionality
 
 ## 📋 Prerequisites
 
@@ -206,8 +274,22 @@ graph-sql automatically transforms your SQLite databases into modern GraphQL ser
 # Install globally
 cargo install --git https://github.com/karlrobeck/graph-sql.git
 
+# Create a config.toml file
+cat > config.toml << EOF
+[server]
+host = "0.0.0.0"
+port = 8000
+
+[database]
+database-url = "sqlite://my_app.db"
+use-env = true
+
+[graphql]
+enable-playground = true
+EOF
+
 # Serve any database instantly
-graph-sql serve -d "sqlite://my_app.db"
+graph-sql serve
 # Open http://localhost:8000 for GraphiQL interface
 ```
 
@@ -248,39 +330,60 @@ async fn main() -> async_graphql::Result<()> {
 ```
 
 That's it! graph-sql automatically:
+
 - 🔍 **Introspects your database** schema
-- 🏗️ **Generates GraphQL types** for all tables  
+- 🏗️ **Generates GraphQL types** for all tables
 - 🔗 **Maps foreign keys** to GraphQL relationships
 - ⚡ **Creates CRUD resolvers** for all operations
 
 ## 📚 Examples
 
-For detailed documentation and more queries, see the [examples directory](./examples/).
+For detailed documentation and more queries, see the
+[examples directory](./examples/).
 
 ### **Running Examples**
 
-To run the included examples:
+Each example includes a `config.toml` file with the appropriate database
+configuration. To run the included examples:
 
 ```bash
 # Navigate to an example directory
 cd examples/blog
 
+# The example already has a config.toml configured
 # Run the example
 cargo run
 
 # Open http://localhost:8000 for GraphiQL interface
 ```
 
+**Example config.toml structure**:
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 8000
+
+[database]
+database-url = "sqlite://blog.db"
+use-env = false
+migrations-path = "./migrations"
+
+[graphql]
+enable-playground = true
+```
+
 ### **Example Overview**
 
 - **Blog System** - Complete blog with posts, authors, and comments
-- **E-commerce** - Product catalog with categories and orders  
+- **E-commerce** - Product catalog with categories and orders
 - **Library** - Book management with authors and borrowing
 - **Task Manager** - Todo application with users and assignments
 
 ### **Quick Example - Blog System**
 
-The blog example demonstrates a complete content management system with relationships between posts, authors, and comments.
+The blog example demonstrates a complete content management system with
+relationships between posts, authors, and comments.
 
 ## 🏗️ GraphQL Schema Structure
 
@@ -295,7 +398,7 @@ graph-sql automatically generates GraphQL types based on your SQLite schema:
 ## 🗄️ Database Schema Mapping
 
 | SQLite Type | GraphQL Type |
-|-------------|--------------|
+| ----------- | ------------ |
 | INTEGER     | Int          |
 | TEXT        | String       |
 | REAL        | Float        |
@@ -335,11 +438,55 @@ mutation {
 
 ## ⚙️ Configuration
 
-graph-sql supports configuration through:
+graph-sql uses TOML configuration files for all settings. The CLI looks for
+`config.toml` in the current directory by default, or you can specify a custom
+path with `-c`.
 
-- **Command line arguments** - Direct parameter passing
-- **Environment variables** - `DATABASE_URL` for database connection
-- **Configuration files** - Future support planned
+### **Configuration Structure**
+
+```toml
+[server]
+host = "0.0.0.0"        # Server bind address
+port = 8000             # Server port
+
+[database]
+database-url = "sqlite://local.db"  # Database connection string
+use-env = true                      # Use DATABASE_URL env var if available
+migrations-path = "./migrations"    # Optional path to migration files
+
+[graphql]
+enable-playground = true            # Enable GraphiQL interface
+depth = 5                          # Query depth limit
+complexity = 5                     # Query complexity limit
+```
+
+### **Configuration Options**
+
+**Server Section**:
+
+- `host` - Server bind address (default: "0.0.0.0")
+- `port` - Server port number (default: 8000)
+
+**Database Section**:
+
+- `database-url` - SQLite database connection string
+- `use-env` - If true, uses `DATABASE_URL` environment variable when available
+- `migrations-path` - Optional directory containing SQL migration files
+
+**GraphQL Section** (optional):
+
+- `enable-playground` - Enable GraphiQL interactive interface (default: true)
+- `depth` - Maximum query depth allowed (default: 5)
+- `complexity` - Maximum query complexity allowed (default: 5)
+
+### **Environment Variables**
+
+Set `use-env = true` in your config to enable environment variable support:
+
+```bash
+export DATABASE_URL="sqlite://production.db"
+graph-sql serve  # Uses DATABASE_URL instead of config database-url
+```
 
 ## 🏛️ Architecture
 
@@ -359,8 +506,27 @@ To contribute to graph-sql:
 git clone https://github.com/karlrobeck/graph-sql.git
 cd graph-sql
 
+# Create a development config file
+cat > config.toml << EOF
+[server]
+host = "0.0.0.0"
+port = 8000
+
+[database]
+database-url = "sqlite://local.db"
+use-env = true
+
+[graphql]
+enable-playground = true
+depth = 5
+complexity = 5
+EOF
+
 # Run tests
 cargo test
+
+# Run the main CLI application
+cargo run -- serve
 
 # Run examples
 cd examples/blog
@@ -386,7 +552,8 @@ cargo run
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+We welcome contributions! Please see our
+[Contributing Guidelines](CONTRIBUTING.md) for details.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
@@ -396,7 +563,8 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ## 📄 License
 
-This project is licensed under the MIT OR Apache-2.0 License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT OR Apache-2.0 License - see the
+[LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -407,9 +575,12 @@ This project is licensed under the MIT OR Apache-2.0 License - see the [LICENSE]
 
 ## 📞 Support
 
-- Create an [issue](https://github.com/karlrobeck/graph-sql/issues) for bug reports
-- Start a [discussion](https://github.com/karlrobeck/graph-sql/discussions) for questions
+- Create an [issue](https://github.com/karlrobeck/graph-sql/issues) for bug
+  reports
+- Start a [discussion](https://github.com/karlrobeck/graph-sql/discussions) for
+  questions
 
 ---
 
-**graph-sql** - Turning your SQLite database into a full-featured GraphQL API, effortlessly.
+**graph-sql** - Turning your SQLite database into a full-featured GraphQL API,
+effortlessly.

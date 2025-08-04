@@ -79,15 +79,17 @@ async fn serve_command(config: Config) -> async_graphql::Result<()> {
         }
     }
 
-    let schema = graph_sql::introspect(&db).await?.finish()?;
+    let graphql_config = config.graphql.unwrap_or_default();
+
+    let schema = graph_sql::introspect(&db)
+        .await?
+        .limit_complexity(graphql_config.complexity as usize)
+        .limit_depth(graphql_config.depth as usize)
+        .finish()?;
 
     let mut router = Router::new();
 
-    if config
-        .graphql
-        .map(|c| c.enable_playground.unwrap_or(true))
-        .is_some()
-    {
+    if graphql_config.enable_playground {
         router = router.route(
             "/",
             axum::routing::get(graphiql).post_service(GraphQL::new(schema)),
