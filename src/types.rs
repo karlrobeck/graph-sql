@@ -4,6 +4,7 @@ use async_graphql::dynamic::{
 };
 use sea_query::{Alias, ColumnDef, ColumnSpec, ColumnType, Iden, SimpleExpr};
 use sqlx::prelude::FromRow;
+use tracing::{debug, instrument};
 
 use crate::{
     resolvers::{
@@ -181,6 +182,8 @@ impl ToGraphqlFieldExt for ColumnDef {
 
 impl ToGraphqlMutations for SqliteTable {
     fn to_insert_mutation(&self) -> async_graphql::Result<(InputObject, Field)> {
+        debug!("Generating insert mutation for table '{}'", self.table_info.name);
+        
         let mut input = InputObject::new(format!("insert_{}_input", self.table_info.name));
         let table_name = self.table_info.name.clone();
 
@@ -200,6 +203,7 @@ impl ToGraphqlMutations for SqliteTable {
             TypeRef::named_nn(input.type_name()),
         ));
 
+        debug!("Generated insert mutation for table '{}'", self.table_info.name);
         Ok((input, insert_mutation_field))
     }
 
@@ -266,6 +270,8 @@ impl ToGraphqlMutations for SqliteTable {
 
 impl ToGraphqlNode for SqliteTable {
     fn to_node(&self) -> async_graphql::Result<Object> {
+        debug!("Creating node object for table '{}'", self.table_info.name);
+        
         let table_name = self.table_info.name.clone();
 
         let mut node_obj = Object::new(format!("{}_node", table_name.clone()));
@@ -276,12 +282,15 @@ impl ToGraphqlNode for SqliteTable {
                 .iter()
                 .find(|f_col| f_col.from == col.get_column_name())
             {
+                debug!("Adding foreign key field '{}' -> '{}'", col.get_column_name(), f_col.table);
                 node_obj = node_obj.field(col.to_field(table_name.clone(), Some(f_col.clone()))?);
             } else {
+                debug!("Adding regular field '{}'", col.get_column_name());
                 node_obj = node_obj.field(col.to_field(table_name.clone(), None)?);
             }
         }
 
+        debug!("Created node object for table '{}' with {} fields", self.table_info.name, self.column_info.len());
         Ok(node_obj)
     }
 }
@@ -332,7 +341,10 @@ impl ToGraphqlQueries for SqliteTable {
 }
 
 impl ToGraphqlObject for SqliteTable {
+    #[instrument(skip(self), level = "debug")]
     fn to_object(&self) -> async_graphql::Result<GraphQLObjectOutput> {
+        debug!("Converting table '{}' to GraphQL object", self.table_info.name);
+        
         let mut inputs = vec![];
         let mut mutations = vec![];
         let mut queries = vec![];
@@ -340,10 +352,12 @@ impl ToGraphqlObject for SqliteTable {
         let table_node = self.to_node()?;
         let table_name = self.table_name();
 
+        debug!("Generating mutations for table '{}'", self.table_info.name);
         let insert_mutation = self.to_insert_mutation()?;
         let update_mutation = self.to_update_mutation()?;
         let delete_mutation = self.to_delete_mutation()?;
 
+        debug!("Generating queries for table '{}'", self.table_info.name);
         let list_query = self.to_list_query()?;
         let view_query = self.to_view_query()?;
 
@@ -362,6 +376,14 @@ impl ToGraphqlObject for SqliteTable {
         inputs.push(delete_mutation.0);
         inputs.push(list_query.0);
         inputs.push(view_query.0);
+
+        debug!(
+            "Generated GraphQL object for table '{}': {} queries, {} mutations, {} inputs",
+            self.table_info.name,
+            queries.len(),
+            mutations.len(),
+            inputs.len()
+        );
 
         Ok(GraphQLObjectOutput {
             table: table_node,

@@ -5,11 +5,17 @@ use async_graphql::{
 };
 use sea_query::{Alias, ColumnDef, ColumnSpec, Expr, Query, SqliteQueryBuilder};
 use sqlx::SqlitePool;
+use tracing::debug;
 
 use crate::types::{ForeignKeyInfo, SqliteTable, ToSeaQueryValue};
 
 pub fn list_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
+        debug!(
+            "Executing list resolver for table: {:?}",
+            table_info.table_name()
+        );
+
         let db = ctx.data::<SqlitePool>()?;
         let table_name = table_info.table_name();
         let pk_col = table_info.primary_key()?;
@@ -19,12 +25,16 @@ pub fn list_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> Field
         let page = input.try_get("page")?.u64()?;
         let limit = input.try_get("limit")?.u64()?;
 
+        debug!("List query parameters - page: {}, limit: {}", page, limit);
+
         let query = Query::select()
             .from(table_name)
             .column(Alias::new(pk_col.get_column_name()))
             .offset((page - 1) * limit)
             .limit(limit)
             .to_string(SqliteQueryBuilder);
+
+        debug!("Generated SQL query: {}", query);
 
         let result = sqlx::query_as::<_, (i64,)>(&query)
             .fetch_all(db)
@@ -39,12 +49,18 @@ pub fn list_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> Field
             .map(|val| Value::from_json(val).unwrap())
             .collect::<Vec<_>>();
 
+        debug!("List resolver returned {} items", result.len());
         Ok(Some(Value::List(result)))
     })
 }
 
 pub fn view_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
+        debug!(
+            "Executing view resolver for table: {:?}",
+            table_info.table_name()
+        );
+
         let db = ctx.data::<SqlitePool>()?;
 
         let id = ctx
@@ -56,6 +72,8 @@ pub fn view_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> Field
             .ok_or(anyhow!("Unable to get id"))?
             .i64()?;
 
+        debug!("View query for ID: {}", id);
+
         let table_name = table_info.table_name();
 
         let pk_col = table_info.primary_key()?;
@@ -65,6 +83,8 @@ pub fn view_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> Field
             .column(Alias::new(pk_col.get_column_name()))
             .and_where(Expr::col(Alias::new(pk_col.get_column_name())).eq(id))
             .to_string(SqliteQueryBuilder);
+
+        debug!("Generated SQL query: {}", query);
 
         let result = sqlx::query_as::<_, (i64,)>(&query)
             .fetch_one(db)
@@ -77,6 +97,7 @@ pub fn view_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> Field
             })
             .map(|val| Value::from_json(val).unwrap())?;
 
+        debug!("View resolver found record with ID: {}", id);
         Ok(Some(result))
     })
 }
@@ -87,6 +108,11 @@ pub fn foreign_key_resolver(
     ctx: ResolverContext<'_>,
 ) -> FieldFuture<'_> {
     FieldFuture::new(async move {
+        debug!(
+            "Executing foreign key resolver for table: {} -> {}",
+            table_name, f_col.table
+        );
+
         let db = ctx.data::<SqlitePool>()?;
 
         let parent_value = ctx
@@ -152,6 +178,12 @@ pub fn column_resolver(
     ctx: ResolverContext<'_>,
 ) -> FieldFuture<'_> {
     FieldFuture::new(async move {
+        debug!(
+            "Executing column resolver for table: {} column: {}",
+            table_name,
+            col.get_column_name()
+        );
+
         let db = ctx.data::<SqlitePool>()?;
 
         let parent_value = ctx
@@ -200,12 +232,19 @@ pub fn column_resolver(
 
 pub fn insert_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
+        debug!(
+            "Executing insert resolver for table: {:?}",
+            table.table_name()
+        );
+
         let db = ctx.data::<SqlitePool>()?;
         let table_name = table.table_name();
 
         let input = ctx.args.try_get("input")?;
 
         let input = input.object()?;
+
+        debug!("Insert data: {} fields", input.len());
 
         let mut binding = Query::insert();
 
@@ -226,6 +265,7 @@ pub fn insert_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFut
         let mut values = vec![];
 
         for (key, val) in input.iter() {
+            debug!("Processing field: {}", key);
             let col_type = table
                 .column_info
                 .iter()
@@ -242,6 +282,8 @@ pub fn insert_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFut
 
         let query = query.values(values)?.to_string(SqliteQueryBuilder);
 
+        debug!("Generated SQL query: {}", query);
+
         let result = sqlx::query_as::<_, (i64,)>(&query)
             .fetch_one(db)
             .await
@@ -252,12 +294,18 @@ pub fn insert_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFut
                 })
             })?;
 
+        debug!("Insert completed, new ID: {:?}", result);
         Ok(Some(Value::from_json(result)?))
     })
 }
 
 pub fn update_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
+        debug!(
+            "Executing update resolver for table: {:?}",
+            table.table_name()
+        );
+
         let table_name = table.table_name();
 
         let pk_col = table.primary_key()?;
@@ -266,7 +314,11 @@ pub fn update_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFut
 
         let id = ctx.args.try_get("id")?.i64()?;
 
+        debug!("Update query for ID: {}", id);
+
         let input = ctx.args.try_get("input")?.object()?;
+
+        debug!("Update data: {} fields", input.len());
 
         let mut binding = Query::update();
 
@@ -277,6 +329,7 @@ pub fn update_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFut
         let mut values = vec![];
 
         for (key, val) in input.iter() {
+            debug!("Processing field: {}", key);
             let col_type = table
                 .column_info
                 .iter()
@@ -299,6 +352,8 @@ pub fn update_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFut
 
         let query = query.to_string(SqliteQueryBuilder);
 
+        debug!("Generated SQL query: {}", query);
+
         let result = sqlx::query_as::<_, (i64,)>(&query)
             .fetch_one(db)
             .await
@@ -309,12 +364,18 @@ pub fn update_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFut
                 })
             })?;
 
+        debug!("Update completed for ID: {}", id);
         Ok(Some(Value::from_json(result)?))
     })
 }
 
 pub fn delete_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
+        debug!(
+            "Executing delete resolver for table: {:?}",
+            table.table_name()
+        );
+
         let table_name = table.table_name();
 
         let pk_col = table.primary_key()?;
@@ -323,12 +384,21 @@ pub fn delete_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFut
 
         let id = ctx.args.try_get("id")?.i64()?;
 
+        debug!("Delete query for ID: {}", id);
+
         let query = Query::delete()
             .from_table(table_name)
             .and_where(Expr::col(Alias::new(pk_col.get_column_name())).eq(id))
             .to_string(SqliteQueryBuilder);
 
+        debug!("Generated SQL query: {}", query);
+
         let result = sqlx::query(&query).execute(db).await?;
+
+        debug!(
+            "Delete completed, rows affected: {}",
+            result.rows_affected()
+        );
 
         Ok(Some(Value::from_json(
             serde_json::json!({"rows_affected":result.rows_affected()}),

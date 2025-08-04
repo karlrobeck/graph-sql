@@ -10,3 +10,4 @@ complexity = 5
 [database]
 use-env = true
 database-url = ""
+migrations-path = ""
