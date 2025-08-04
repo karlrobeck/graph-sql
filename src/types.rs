@@ -11,8 +11,8 @@ use crate::{
         update_resolver, view_resolver,
     },
     traits::{
-        ToGraphqlFieldExt, ToGraphqlInputValueExt, ToGraphqlMutations, ToGraphqlNode,
-        ToGraphqlObject, ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlTypeRefExt,
+        GraphQLObjectOutput, ToGraphqlFieldExt, ToGraphqlInputValueExt, ToGraphqlMutations,
+        ToGraphqlNode, ToGraphqlObject, ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlTypeRefExt,
     },
 };
 
@@ -52,8 +52,7 @@ impl SqliteTable {
             .find(|col| {
                 col.get_column_spec()
                     .iter()
-                    .find(|spec| matches!(spec, sea_query::ColumnSpec::PrimaryKey))
-                    .is_some()
+                    .any(|spec| matches!(spec, sea_query::ColumnSpec::PrimaryKey))
             })
             .ok_or(anyhow::anyhow!("Unable to get primary key"))
     }
@@ -70,11 +69,11 @@ pub trait ToSeaQueryValue {
 impl ToSeaQueryValue for ValueAccessor<'_> {
     fn to_sea_query(&self, col_type: &ColumnType) -> async_graphql::Result<SimpleExpr> {
         match col_type {
-            ColumnType::Text => self.string().map(|val| Into::<SimpleExpr>::into(val)),
-            ColumnType::Integer => self.i64().map(|val| Into::<SimpleExpr>::into(val)),
-            ColumnType::Boolean => self.boolean().map(|val| Into::<SimpleExpr>::into(val)),
-            ColumnType::Float => self.f64().map(|val| Into::<SimpleExpr>::into(val)),
-            _ => self.string().map(|val| Into::<SimpleExpr>::into(val)),
+            ColumnType::Text => self.string().map(Into::<SimpleExpr>::into),
+            ColumnType::Integer => self.i64().map(Into::<SimpleExpr>::into),
+            ColumnType::Boolean => self.boolean().map(Into::<SimpleExpr>::into),
+            ColumnType::Float => self.f64().map(Into::<SimpleExpr>::into),
+            _ => self.string().map(Into::<SimpleExpr>::into),
         }
     }
 }
@@ -103,13 +102,9 @@ impl ToGraphqlInputValueExt for ColumnDef {
 
         let mut specs = self.get_column_spec().iter();
 
-        let is_not_null = specs
-            .find(|spec| matches!(spec, ColumnSpec::NotNull))
-            .is_some();
+        let is_not_null = specs.any(|spec| matches!(spec, ColumnSpec::NotNull));
 
-        let has_default_val = specs
-            .find(|spec| matches!(spec, ColumnSpec::Default(_)))
-            .is_some();
+        let has_default_val = specs.any(|spec| matches!(spec, ColumnSpec::Default(_)));
 
         if force_nullable {
             return Ok(InputValue::new(
@@ -136,15 +131,10 @@ impl ToGraphqlTypeRefExt for ColumnDef {
     fn to_type_ref(&self) -> async_graphql::Result<TypeRef> {
         let scalar = self.to_scalar()?;
 
-        if self
-            .get_column_spec()
-            .iter()
-            .find(|spec| {
-                matches!(spec, sea_query::ColumnSpec::NotNull)
-                    || !matches!(spec, ColumnSpec::Default(_))
-            })
-            .is_some()
-        {
+        if self.get_column_spec().iter().any(|spec| {
+            matches!(spec, sea_query::ColumnSpec::NotNull)
+                || !matches!(spec, ColumnSpec::Default(_))
+        }) {
             Ok(TypeRef::named_nn(scalar.type_name()))
         } else {
             Ok(TypeRef::named(scalar.type_name()))
@@ -169,15 +159,10 @@ impl ToGraphqlFieldExt for ColumnDef {
                 column_name.clone()
             };
 
-            let type_ref = if self
-                .get_column_spec()
-                .iter()
-                .find(|spec| {
-                    matches!(spec, sea_query::ColumnSpec::NotNull)
-                        || !matches!(spec, ColumnSpec::Default(_))
-                })
-                .is_some()
-            {
+            let type_ref = if self.get_column_spec().iter().any(|spec| {
+                matches!(spec, sea_query::ColumnSpec::NotNull)
+                    || !matches!(spec, ColumnSpec::Default(_))
+            }) {
                 TypeRef::named_nn(format!("{}_node", f_col.table))
             } else {
                 TypeRef::named(format!("{}_node", f_col.table))
@@ -347,9 +332,7 @@ impl ToGraphqlQueries for SqliteTable {
 }
 
 impl ToGraphqlObject for SqliteTable {
-    fn to_object(
-        &self,
-    ) -> async_graphql::Result<(Object, Vec<Object>, Vec<Field>, Vec<InputObject>)> {
+    fn to_object(&self) -> async_graphql::Result<GraphQLObjectOutput> {
         let mut inputs = vec![];
         let mut mutations = vec![];
         let mut queries = vec![];
@@ -380,6 +363,11 @@ impl ToGraphqlObject for SqliteTable {
         inputs.push(list_query.0);
         inputs.push(view_query.0);
 
-        Ok((table_node, queries, mutations, inputs))
+        Ok(GraphQLObjectOutput {
+            table: table_node,
+            queries,
+            mutations,
+            inputs,
+        })
     }
 }

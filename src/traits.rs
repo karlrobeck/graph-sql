@@ -364,6 +364,20 @@ pub trait ToGraphqlNode {
     fn to_node(&self) -> async_graphql::Result<Object>;
 }
 
+/// Output struct for complete GraphQL schema generation for a database table.
+///
+/// Contains all components needed to register the table's schema:
+/// - `table`: The main node object type representing table records
+/// - `queries`: Query objects containing list and view operations
+/// - `mutations`: Mutation field definitions for insert, update, delete
+/// - `inputs`: Input object type definitions for queries and mutations
+pub struct GraphQLObjectOutput {
+    pub table: Object,
+    pub queries: Vec<Object>,
+    pub mutations: Vec<Field>,
+    pub inputs: Vec<InputObject>,
+}
+
 /// Orchestrates the complete GraphQL schema generation for database tables.
 ///
 /// This trait combines all other traits to generate a complete GraphQL representation
@@ -410,7 +424,5 @@ pub trait ToGraphqlObject {
     /// - `Vec<Object>`: Query object containing list and view operations to be added to Query type
     /// - `Vec<Field>`: All mutation field definitions to be added to the Mutation type
     /// - `Vec<InputObject>`: All input object type definitions to be registered with the schema
-    fn to_object(
-        &self,
-    ) -> async_graphql::Result<(Object, Vec<Object>, Vec<Field>, Vec<InputObject>)>;
+    fn to_object(&self) -> async_graphql::Result<GraphQLObjectOutput>;
 }

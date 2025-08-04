@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 
 use crate::types::{ForeignKeyInfo, SqliteTable, ToSeaQueryValue};
 
-pub fn list_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
+pub fn list_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
         let table_name = table_info.table_name();
@@ -43,7 +43,7 @@ pub fn list_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> F
     })
 }
 
-pub fn view_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
+pub fn view_resolver(table_info: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
 
@@ -81,11 +81,11 @@ pub fn view_resolver<'a>(table_info: SqliteTable, ctx: ResolverContext<'a>) -> F
     })
 }
 
-pub fn foreign_key_resolver<'a>(
+pub fn foreign_key_resolver(
     table_name: String,
     f_col: ForeignKeyInfo,
-    ctx: ResolverContext<'a>,
-) -> FieldFuture<'a> {
+    ctx: ResolverContext<'_>,
+) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
 
@@ -140,17 +140,17 @@ pub fn foreign_key_resolver<'a>(
                     "id":val.get(&f_col.to).unwrap()
                 })
             })
-            .map(|val| Value::from_json(val))?;
+            .map(Value::from_json)?;
 
         Ok(Some(result?))
     })
 }
 
-pub fn column_resolver<'a>(
+pub fn column_resolver(
     table_name: String,
     col: ColumnDef,
-    ctx: ResolverContext<'a>,
-) -> FieldFuture<'a> {
+    ctx: ResolverContext<'_>,
+) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
 
@@ -192,13 +192,13 @@ pub fn column_resolver<'a>(
             .await
             .map(|(map_val,)| map_val.as_object().unwrap().clone())
             .map(|val| val.get(&col.get_column_name()).unwrap().clone())
-            .map(|val| Value::from_json(val))?;
+            .map(Value::from_json)?;
 
         Ok(Some(result?))
     })
 }
 
-pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
+pub fn insert_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
         let table_name = table.table_name();
@@ -215,8 +215,7 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
             .find(|col| {
                 col.get_column_spec()
                     .iter()
-                    .find(|spec| matches!(spec, ColumnSpec::PrimaryKey))
-                    .is_some()
+                    .any(|spec| matches!(spec, ColumnSpec::PrimaryKey))
             })
             .unwrap();
 
@@ -257,7 +256,7 @@ pub fn insert_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
     })
 }
 
-pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
+pub fn update_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let table_name = table.table_name();
 
@@ -314,7 +313,7 @@ pub fn update_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> Fiel
     })
 }
 
-pub fn delete_resolver<'a>(table: SqliteTable, ctx: ResolverContext<'a>) -> FieldFuture<'a> {
+pub fn delete_resolver(table: SqliteTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let table_name = table.table_name();
 

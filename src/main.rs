@@ -10,7 +10,7 @@ use tokio::net::TcpListener;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "A GraphQL server for SQL databases", long_about = None)]
-struct CLI {
+struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
@@ -67,7 +67,7 @@ async fn ensure_database_exists(database_url: &str) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> async_graphql::Result<()> {
-    let cli = CLI::parse();
+    let cli = Cli::parse();
 
     match cli.command {
         Commands::Serve {

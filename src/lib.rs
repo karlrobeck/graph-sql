@@ -91,10 +91,10 @@ pub async fn introspect(db: &SqlitePool) -> async_graphql::Result<SchemaBuilder>
     for table in sqlite_tables {
         let name = table.table_name();
 
-        let (node, queries, mutations, mutation_inputs) = table.to_object()?;
+        let graphql = table.to_object()?;
 
         // add query
-        for query in queries {
+        for query in graphql.queries {
             query_object = query_object.field(Field::new(
                 name.to_string(),
                 TypeRef::named_nn(query.type_name()),
@@ -105,13 +105,13 @@ pub async fn introspect(db: &SqlitePool) -> async_graphql::Result<SchemaBuilder>
         }
 
         // add mutations
-        for mutation in mutations.into_iter() {
+        for mutation in graphql.mutations.into_iter() {
             mutation_object = mutation_object.field(mutation);
         }
 
         // register types
-        table_objects.push(node);
-        inputs.extend(mutation_inputs);
+        table_objects.push(graphql.table);
+        inputs.extend(graphql.inputs);
     }
 
     let mut schema = Schema::build(
