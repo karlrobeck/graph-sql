@@ -27,8 +27,31 @@ For detailed documentation and more queries, see the
 > functionality is stable, the API may evolve significantly. For production use,
 > please pin to a specific commit and thoroughly test any updates.
 
+### **Production Readiness**
+
+**✅ Recommended for:**
+- Internal tools and admin panels
+- Prototypes and MVPs
+- Development and testing environments
+- Low-risk applications
+- Edge deployments and serverless functions
+
+**⚠️ Use with caution for:**
+- High-traffic public APIs
+- Mission-critical applications
+- Applications requiring real-time features
+- Complex authentication/authorization needs
+
+**📈 Production Guidelines:**
+- Pin to a specific commit for stability
+- Thoroughly test updates before deployment
+- Use for non-critical services first
+- Consider it for internal tooling and admin interfaces
+
 ## 📋 Table of Contents
 
+- [Why graph-sql?](#-why-graph-sql)
+- [Comparisons](#️-comparisons)
 - [Installation](#-installation)
   - [CLI Application (Recommended)](#cli-application-recommended)
   - [CLI Usage](#cli-usage)
@@ -40,6 +63,7 @@ For detailed documentation and more queries, see the
   - [Use Cases](#use-cases)
 - [How It Works](#-how-it-works)
 - [Features](#-features)
+- [Feature Support Status](#-feature-support-status)
 - [Prerequisites](#-prerequisites)
 - [Quick Start](#-quick-start)
   - [CLI Tool](#cli-tool)
@@ -56,6 +80,7 @@ For detailed documentation and more queries, see the
   - [Configuration Options](#configuration-options)
   - [Environment Variables](#environment-variables)
 - [Architecture](#️-architecture)
+- [Deployment](#-deployment)
 - [Development](#-development)
 - [Current Limitations](#-current-limitations)
 - [Roadmap](#️-roadmap)
@@ -63,6 +88,81 @@ For detailed documentation and more queries, see the
 - [License](#-license)
 - [Acknowledgments](#-acknowledgments)
 - [Support](#-support)
+
+## 🤔 Why graph-sql?
+
+graph-sql was created to solve several key challenges in modern API development:
+
+### **Memory Safety at Scale**
+Traditional GraphQL servers written in languages like Node.js or Go can suffer from memory leaks, buffer overflows, and garbage collection pauses. graph-sql leverages Rust's **zero-cost abstractions** and **compile-time memory safety** to eliminate entire classes of bugs that plague production API servers.
+
+### **Database-First Philosophy**
+Instead of building complex application logic in the API layer, graph-sql pushes business logic to where it belongs: **the database**. This approach offers:
+- **Better Performance**: Database operations are faster than network calls
+- **Data Consistency**: Business rules enforced at the data layer
+- **Simplified Architecture**: Stateless gateway with no application state
+- **Natural Scaling**: Multiple instances can serve the same database
+
+### **SQLite Maximization**
+SQLite is often underestimated but offers unique advantages:
+- **Edge Computing**: Perfect for serverless and edge deployments
+- **Performance**: Excellent for read-heavy workloads and significant writes
+- **Simplicity**: Single file, no server setup, easy backup and replication
+- **Extensions**: Support for sqlean and other extensions for advanced functionality
+- **ACID Compliance**: Full transactions with excellent reliability
+
+### **High-Performance Gateway**
+graph-sql is specifically designed for **heavy-load scenarios**:
+- **Minimal Resource Usage**: Low memory footprint and CPU overhead
+- **Efficient Concurrency**: Tokio async runtime for thousands of connections
+- **Stateless Design**: Pure middleman enabling horizontal scaling
+- **Native Speed**: Compiled binary performance comparable to C/C++
+
+## ⚖️ Comparisons
+
+### **vs. Hasura**
+
+| Feature | graph-sql | Hasura |
+|---------|-----------|---------|
+| **Database Support** | SQLite + extensions | PostgreSQL, MySQL, SQL Server, BigQuery |
+| **Setup Complexity** | Zero config, single binary | Moderate (Docker/Cloud) |
+| **Target Use Case** | High-performance gateway | Production, enterprise |
+| **Memory Safety** | Rust memory safety | Go (garbage collected) |
+| **Business Logic** | Database-first (SQLite) | Application-first (resolvers) |
+| **Authentication** | JWT → SQLite authorization | Built-in with multiple providers |
+| **Performance** | Heavy load optimized | Very fast, enterprise scale |
+| **Deployment** | Single binary | Docker/Kubernetes |
+| **Learning Curve** | Minimal | Moderate |
+
+### **vs. PostgREST**
+
+| Feature | graph-sql | PostgREST |
+|---------|-----------|-----------|
+| **API Style** | GraphQL | REST |
+| **Database** | SQLite | PostgreSQL |
+| **Query Flexibility** | High (GraphQL) | Moderate (REST) |
+| **Learning Curve** | GraphQL knowledge needed | REST-familiar |
+| **Type Safety** | Strong (Rust + GraphQL) | Moderate |
+
+### **vs. Supabase**
+
+| Feature | graph-sql | Supabase |
+|---------|-----------|-----------|
+| **Scope** | GraphQL gateway/middleman | Full backend platform |
+| **Database** | SQLite + extensions | PostgreSQL |
+| **Architecture** | Stateless gateway | Full backend platform |
+| **Business Logic** | Database-first (SQLite) | Mixed (database + edge functions) |
+| **Authentication** | JWT → database authorization | Built-in authentication service |
+| **Deployment** | Single binary | Cloud + self-hosted |
+| **Memory Safety** | Rust memory safety | TypeScript/Node.js |
+| **Performance Focus** | Heavy load optimization | Platform completeness |
+
+**Choose graph-sql when:**
+- You want memory-safe, Rust-based performance
+- You prefer database-first business logic
+- You need simple, single-binary deployment
+- You want to leverage SQLite's capabilities
+- You need a lightweight, stateless gateway
 
 ## 📦 Installation
 
@@ -261,6 +361,26 @@ services.
 - **SQLite Extensions**: Future support for sqlean and other SQLite extensions
   for advanced functionality
 
+## ✅ Feature Support Status
+
+### **Currently Supported**
+- ✅ **Queries**: List and view operations with pagination
+- ✅ **Mutations**: Insert, update, delete operations  
+- ✅ **Foreign Key Relationships**: Automatic relationship field generation
+- ✅ **Type Safety**: Proper nullable/non-nullable field mapping
+- ✅ **GraphiQL**: Built-in interactive query interface
+- ✅ **CRUD Operations**: Complete Create, Read, Update, Delete support
+- ✅ **Schema Introspection**: Automatic GraphQL schema generation
+- ✅ **Multiple Frameworks**: Axum, Actix-web, Warp, Tide support
+
+### **Not Yet Supported**
+- ❌ **Subscriptions**: Real-time updates (planned)
+- ❌ **Advanced Filtering**: WHERE clauses beyond basic ID lookup
+- ❌ **Custom Resolvers**: Plugin system for business logic
+- ❌ **Aggregations**: COUNT, SUM, AVG operations
+- ❌ **Multi-database**: PostgreSQL, MySQL support (planned)
+- ❌ **Advanced Auth**: OAuth, JWT integration (planned)
+
 ## 📋 Prerequisites
 
 - Rust 1.86.0+ (2024 edition)
@@ -343,35 +463,24 @@ For detailed documentation and more queries, see the
 
 ### **Running Examples**
 
-Each example includes a `config.toml` file with the appropriate database
-configuration. To run the included examples:
+The examples use graph-sql as a library and include their own database setup
+and migrations. To run the included examples:
 
 ```bash
 # Navigate to an example directory
 cd examples/blog
 
-# The example already has a config.toml configured
-# Run the example
+# Run the example (it will create the database and run migrations)
 cargo run
 
 # Open http://localhost:8000 for GraphiQL interface
 ```
 
-**Example config.toml structure**:
-
-```toml
-[server]
-host = "0.0.0.0"
-port = 8000
-
-[database]
-database-url = "sqlite://blog.db"
-use-env = false
-migrations-path = "./migrations"
-
-[graphql]
-enable-playground = true
-```
+Each example demonstrates library usage with:
+- Automatic database creation
+- Built-in migration handling
+- Custom GraphQL server setup
+- Interactive GraphiQL interface
 
 ### **Example Overview**
 
@@ -497,7 +606,66 @@ graph-sql follows a database-first architecture:
 3. **Resolver Generation** - Builds CRUD operations automatically
 4. **Gateway Layer** - Stateless GraphQL server
 
-## 🛠️ Development
+## � Deployment
+
+### **Binary Deployment**
+
+```bash
+# Install and run
+cargo install --git https://github.com/karlrobeck/graph-sql.git
+graph-sql serve -d "sqlite://production.db" -p 8080
+```
+
+### **Docker Deployment**
+
+```dockerfile
+FROM rust:alpine as builder
+RUN apk add --no-cache musl-dev
+RUN cargo install --git https://github.com/karlrobeck/graph-sql.git
+
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /usr/local/cargo/bin/graph-sql /usr/local/bin/
+COPY database.db /app/
+COPY config.toml /app/
+WORKDIR /app
+CMD ["graph-sql", "serve"]
+```
+
+### **Systemd Service**
+
+```ini
+[Unit]
+Description=graph-sql GraphQL API
+After=network.target
+
+[Service]
+Type=simple
+User=graph-sql
+WorkingDirectory=/opt/graph-sql
+ExecStart=/usr/local/bin/graph-sql serve
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### **Scaling Strategies**
+
+**Current Options:**
+- **Vertical Scaling**: Increase server resources
+- **Load Balancing**: Multiple instances behind a load balancer
+- **Read Replicas**: SQLite supports read-only replicas
+- **Caching**: Add Redis/Memcached in front
+
+**Future Features:**
+- Connection pooling optimizations
+- Query result caching
+- Horizontal sharding support
+- Performance monitoring and metrics
+
+## �🛠️ Development
 
 To contribute to graph-sql:
 
@@ -542,13 +710,34 @@ cargo run
 
 ## 🗺️ Roadmap
 
-- [ ] PostgreSQL and MySQL support
-- [ ] Advanced authentication and authorization
+### **Short-term (Next 3-6 months)**
+- [ ] JWT authentication and authorization integration
+- [ ] SQLite extension support (starting with sqlean)
+- [ ] Advanced filtering (WHERE clauses)
+- [ ] Performance optimizations for heavy load scenarios
+- [ ] Data loaders for N+1 query prevention
+
+### **Medium-term (6-12 months)**
+- [ ] Row-level security implementation in SQLite
+- [ ] Real-time subscriptions (GraphQL subscriptions)
+- [ ] Database function support for business logic
+- [ ] Connection pooling and caching optimizations
+- [ ] PostgreSQL support with same philosophy
+
+### **Long-term (12+ months)**
+- [ ] Multi-database support (PostgreSQL, MySQL) with database-first approach
+- [ ] Advanced SQLite extensions ecosystem
+- [ ] Performance monitoring and metrics
+- [ ] Horizontal scaling tools and best practices
 - [ ] Custom scalar types
-- [ ] GraphQL subscriptions
-- [ ] Performance optimizations
 - [ ] Docker containerization
 - [ ] Cloud deployment guides
+
+### **Future Database Support**
+The database-first philosophy will extend to other databases:
+- **PostgreSQL** - Row Level Security, stored procedures, custom types
+- **MySQL** - Stored procedures, user-defined functions, triggers
+- **SQL Server** - T-SQL procedures, user-defined functions, CLR integration
 
 ## 🤝 Contributing
 
@@ -579,6 +768,12 @@ This project is licensed under the MIT OR Apache-2.0 License - see the
   reports
 - Start a [discussion](https://github.com/karlrobeck/graph-sql/discussions) for
   questions
+
+## 📖 Additional Resources
+
+- **[FAQ](./FAQ.md)** - Comprehensive answers to common questions
+- **[Contributing Guide](./CONTRIBUTING.md)** - Detailed contribution guidelines
+- **[Examples](./examples/)** - Complete example applications
 
 ---
 
