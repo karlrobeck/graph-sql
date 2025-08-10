@@ -30,6 +30,7 @@ For detailed documentation and more queries, see the
 ### **Production Readiness**
 
 **✅ Recommended for:**
+
 - Internal tools and admin panels
 - Prototypes and MVPs
 - Development and testing environments
@@ -37,12 +38,14 @@ For detailed documentation and more queries, see the
 - Edge deployments and serverless functions
 
 **⚠️ Use with caution for:**
+
 - High-traffic public APIs
 - Mission-critical applications
 - Applications requiring real-time features
 - Complex authentication/authorization needs
 
 **📈 Production Guidelines:**
+
 - Pin to a specific commit for stability
 - Thoroughly test updates before deployment
 - Use for non-critical services first
@@ -94,25 +97,37 @@ For detailed documentation and more queries, see the
 graph-sql was created to solve several key challenges in modern API development:
 
 ### **Memory Safety at Scale**
-Traditional GraphQL servers written in languages like Node.js or Go can suffer from memory leaks, buffer overflows, and garbage collection pauses. graph-sql leverages Rust's **zero-cost abstractions** and **compile-time memory safety** to eliminate entire classes of bugs that plague production API servers.
+
+Traditional GraphQL servers written in languages like Node.js or Go can suffer
+from memory leaks, buffer overflows, and garbage collection pauses. graph-sql
+leverages Rust's **zero-cost abstractions** and **compile-time memory safety**
+to eliminate entire classes of bugs that plague production API servers.
 
 ### **Database-First Philosophy**
-Instead of building complex application logic in the API layer, graph-sql pushes business logic to where it belongs: **the database**. This approach offers:
+
+Instead of building complex application logic in the API layer, graph-sql pushes
+business logic to where it belongs: **the database**. This approach offers:
+
 - **Better Performance**: Database operations are faster than network calls
 - **Data Consistency**: Business rules enforced at the data layer
 - **Simplified Architecture**: Stateless gateway with no application state
 - **Natural Scaling**: Multiple instances can serve the same database
 
 ### **SQLite Maximization**
+
 SQLite is often underestimated but offers unique advantages:
+
 - **Edge Computing**: Perfect for serverless and edge deployments
 - **Performance**: Excellent for read-heavy workloads and significant writes
 - **Simplicity**: Single file, no server setup, easy backup and replication
-- **Extensions**: Support for sqlean and other extensions for advanced functionality
+- **Extensions**: Support for sqlean and other extensions for advanced
+  functionality
 - **ACID Compliance**: Full transactions with excellent reliability
 
 ### **High-Performance Gateway**
+
 graph-sql is specifically designed for **heavy-load scenarios**:
+
 - **Minimal Resource Usage**: Low memory footprint and CPU overhead
 - **Efficient Concurrency**: Tokio async runtime for thousands of connections
 - **Stateless Design**: Pure middleman enabling horizontal scaling
@@ -122,42 +137,43 @@ graph-sql is specifically designed for **heavy-load scenarios**:
 
 ### **vs. Hasura**
 
-| Feature | graph-sql | Hasura |
-|---------|-----------|---------|
-| **Database Support** | SQLite + extensions | PostgreSQL, MySQL, SQL Server, BigQuery |
-| **Setup Complexity** | Zero config, single binary | Moderate (Docker/Cloud) |
-| **Target Use Case** | High-performance gateway | Production, enterprise |
-| **Memory Safety** | Rust memory safety | Go (garbage collected) |
-| **Business Logic** | Database-first (SQLite) | Application-first (resolvers) |
-| **Authentication** | JWT → SQLite authorization | Built-in with multiple providers |
-| **Performance** | Heavy load optimized | Very fast, enterprise scale |
-| **Deployment** | Single binary | Docker/Kubernetes |
-| **Learning Curve** | Minimal | Moderate |
+| Feature              | graph-sql                  | Hasura                                  |
+| -------------------- | -------------------------- | --------------------------------------- |
+| **Database Support** | SQLite + extensions        | PostgreSQL, MySQL, SQL Server, BigQuery |
+| **Setup Complexity** | Zero config, single binary | Moderate (Docker/Cloud)                 |
+| **Target Use Case**  | High-performance gateway   | Production, enterprise                  |
+| **Memory Safety**    | Rust memory safety         | Go (garbage collected)                  |
+| **Business Logic**   | Database-first (SQLite)    | Application-first (resolvers)           |
+| **Authentication**   | JWT → SQLite authorization | Built-in with multiple providers        |
+| **Performance**      | Heavy load optimized       | Very fast, enterprise scale             |
+| **Deployment**       | Single binary              | Docker/Kubernetes                       |
+| **Learning Curve**   | Minimal                    | Moderate                                |
 
 ### **vs. PostgREST**
 
-| Feature | graph-sql | PostgREST |
-|---------|-----------|-----------|
-| **API Style** | GraphQL | REST |
-| **Database** | SQLite | PostgreSQL |
-| **Query Flexibility** | High (GraphQL) | Moderate (REST) |
-| **Learning Curve** | GraphQL knowledge needed | REST-familiar |
-| **Type Safety** | Strong (Rust + GraphQL) | Moderate |
+| Feature               | graph-sql                | PostgREST       |
+| --------------------- | ------------------------ | --------------- |
+| **API Style**         | GraphQL                  | REST            |
+| **Database**          | SQLite                   | PostgreSQL      |
+| **Query Flexibility** | High (GraphQL)           | Moderate (REST) |
+| **Learning Curve**    | GraphQL knowledge needed | REST-familiar   |
+| **Type Safety**       | Strong (Rust + GraphQL)  | Moderate        |
 
 ### **vs. Supabase**
 
-| Feature | graph-sql | Supabase |
-|---------|-----------|-----------|
-| **Scope** | GraphQL gateway/middleman | Full backend platform |
-| **Database** | SQLite + extensions | PostgreSQL |
-| **Architecture** | Stateless gateway | Full backend platform |
-| **Business Logic** | Database-first (SQLite) | Mixed (database + edge functions) |
-| **Authentication** | JWT → database authorization | Built-in authentication service |
-| **Deployment** | Single binary | Cloud + self-hosted |
-| **Memory Safety** | Rust memory safety | TypeScript/Node.js |
-| **Performance Focus** | Heavy load optimization | Platform completeness |
+| Feature               | graph-sql                    | Supabase                          |
+| --------------------- | ---------------------------- | --------------------------------- |
+| **Scope**             | GraphQL gateway/middleman    | Full backend platform             |
+| **Database**          | SQLite + extensions          | PostgreSQL                        |
+| **Architecture**      | Stateless gateway            | Full backend platform             |
+| **Business Logic**    | Database-first (SQLite)      | Mixed (database + edge functions) |
+| **Authentication**    | JWT → database authorization | Built-in authentication service   |
+| **Deployment**        | Single binary                | Cloud + self-hosted               |
+| **Memory Safety**     | Rust memory safety           | TypeScript/Node.js                |
+| **Performance Focus** | Heavy load optimization      | Platform completeness             |
 
 **Choose graph-sql when:**
+
 - You want memory-safe, Rust-based performance
 - You prefer database-first business logic
 - You need simple, single-binary deployment
@@ -364,8 +380,9 @@ services.
 ## ✅ Feature Support Status
 
 ### **Currently Supported**
+
 - ✅ **Queries**: List and view operations with pagination
-- ✅ **Mutations**: Insert, update, delete operations  
+- ✅ **Mutations**: Insert, update, delete operations
 - ✅ **Foreign Key Relationships**: Automatic relationship field generation
 - ✅ **Type Safety**: Proper nullable/non-nullable field mapping
 - ✅ **GraphiQL**: Built-in interactive query interface
@@ -374,6 +391,7 @@ services.
 - ✅ **Multiple Frameworks**: Axum, Actix-web, Warp, Tide support
 
 ### **Not Yet Supported**
+
 - ❌ **Subscriptions**: Real-time updates (planned)
 - ❌ **Advanced Filtering**: WHERE clauses beyond basic ID lookup
 - ❌ **Custom Resolvers**: Plugin system for business logic
@@ -463,8 +481,8 @@ For detailed documentation and more queries, see the
 
 ### **Running Examples**
 
-The examples use graph-sql as a library and include their own database setup
-and migrations. To run the included examples:
+The examples use graph-sql as a library and include their own database setup and
+migrations. To run the included examples:
 
 ```bash
 # Navigate to an example directory
@@ -477,6 +495,7 @@ cargo run
 ```
 
 Each example demonstrates library usage with:
+
 - Automatic database creation
 - Built-in migration handling
 - Custom GraphQL server setup
@@ -654,12 +673,14 @@ WantedBy=multi-user.target
 ### **Scaling Strategies**
 
 **Current Options:**
+
 - **Vertical Scaling**: Increase server resources
 - **Load Balancing**: Multiple instances behind a load balancer
 - **Read Replicas**: SQLite supports read-only replicas
 - **Caching**: Add Redis/Memcached in front
 
 **Future Features:**
+
 - Connection pooling optimizations
 - Query result caching
 - Horizontal sharding support
@@ -711,6 +732,7 @@ cargo run
 ## 🗺️ Roadmap
 
 ### **Short-term (Next 3-6 months)**
+
 - [ ] JWT authentication and authorization integration
 - [ ] SQLite extension support (starting with sqlean)
 - [ ] Advanced filtering (WHERE clauses)
@@ -718,6 +740,7 @@ cargo run
 - [ ] Data loaders for N+1 query prevention
 
 ### **Medium-term (6-12 months)**
+
 - [ ] Row-level security implementation in SQLite
 - [ ] Real-time subscriptions (GraphQL subscriptions)
 - [ ] Database function support for business logic
@@ -725,6 +748,7 @@ cargo run
 - [ ] PostgreSQL support with same philosophy
 
 ### **Long-term (12+ months)**
+
 - [ ] Multi-database support (PostgreSQL, MySQL) with database-first approach
 - [ ] Advanced SQLite extensions ecosystem
 - [ ] Performance monitoring and metrics
@@ -734,7 +758,9 @@ cargo run
 - [ ] Cloud deployment guides
 
 ### **Future Database Support**
+
 The database-first philosophy will extend to other databases:
+
 - **PostgreSQL** - Row Level Security, stored procedures, custom types
 - **MySQL** - Stored procedures, user-defined functions, triggers
 - **SQL Server** - T-SQL procedures, user-defined functions, CLR integration
