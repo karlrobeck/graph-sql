@@ -13,6 +13,9 @@ keywords = ["graphql", "sql", "database", "api", "web"]
 categories = ["web-programming", "database"]
 rust-version = "1.86.0"
 
+[workspace]
+members = ["examples/*"]
+
 [dependencies]
 anyhow = "1.0.98"
 async-graphql = { version = "7.0.17", features = [
@@ -46,9 +49,9 @@ name = "ecommerce"
 path = "examples/ecommerce/src/main.rs"
 
 [[example]]
-name = "tasks"
-path = "examples/tasks/src/main.rs"
-
-[[example]]
 name = "library"
 path = "examples/library/src/main.rs"
+
+[[example]]
+name = "tasks"
+path = "examples/tasks/src/main.rs"

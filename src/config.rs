@@ -3,6 +3,31 @@ use std::path::PathBuf;
 use async_graphql::dynamic::SchemaBuilder;
 use serde::Deserialize;
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
+use tracing::{debug, info};
+
+/// Load configuration from a TOML file
+pub fn load_config(config_path: &str) -> anyhow::Result<GraphSQLConfig> {
+    debug!("Loading config from: {}", config_path);
+
+    if std::path::Path::new(config_path).exists() {
+        info!("Config file found, loading from: {}", config_path);
+
+        let config_content = std::fs::read_to_string(config_path).map_err(|e| {
+            debug!("Failed to read config file: {}", e);
+            e
+        })?;
+
+        let config: GraphSQLConfig = toml::from_str(&config_content).map_err(|e| {
+            debug!("Failed to parse config file: {}", e);
+            e
+        })?;
+
+        debug!("Config loaded successfully");
+        return Ok(config);
+    }
+
+    Err(anyhow::anyhow!("Unable to load config"))
+}
 
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "kebab-case")]

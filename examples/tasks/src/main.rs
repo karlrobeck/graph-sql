@@ -1,22 +1,14 @@
-use async_graphql::http::GraphiQLSource;
-use async_graphql_axum::GraphQL;
-use axum::{
-    Router,
-    response::{Html, IntoResponse},
-};
-use sqlx::SqlitePool;
-use tokio::net::TcpListener;
-
-async fn graphiql() -> impl IntoResponse {
-    Html(GraphiQLSource::build().endpoint("/").finish())
-}
+use graph_sql::{GraphSQL, config::load_config};
 
 #[tokio::main]
 async fn main() -> async_graphql::Result<()> {
     println!("📝 Starting Task Manager Example Server...");
 
-    // Use in-memory database for demo purposes
-    let db = SqlitePool::connect("sqlite::memory:").await?;
+    // Load configuration from TOML file
+    let config = load_config("examples/tasks/config.toml")?;
+
+    // Create database connection
+    let db = config.database.create_connection().await?;
 
     println!("📊 Running database migrations...");
     sqlx::migrate!("./examples/tasks/migrations")
@@ -24,16 +16,10 @@ async fn main() -> async_graphql::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Migration failed: {}", e))?;
 
-    println!("🔍 Introspecting database schema...");
-    let schema = graph_sql::introspect(&db).await?.finish()?;
+    println!("🔍 Creating GraphSQL instance and building server...");
+    let graph_sql = GraphSQL::new(config);
 
-    println!("🌐 Setting up GraphQL server...");
-    let router = Router::new().route(
-        "/",
-        axum::routing::get(graphiql).post_service(GraphQL::new(schema)),
-    );
-
-    let listener = TcpListener::bind("0.0.0.0:8082").await?;
+    let (router, listener) = graph_sql.build(&db).await?;
 
     println!("✅ Task Manager GraphQL API is running!");
     println!("📝 GraphiQL interface: http://localhost:8082");
@@ -50,7 +36,7 @@ async fn main() -> async_graphql::Result<()> {
     );
     println!();
 
-    if let Err(e) = axum::serve(listener, router).await {
+    if let Err(e) = axum::serve(listener, router.into_make_service()).await {
         eprintln!("Server error: {}", e);
     }
 
