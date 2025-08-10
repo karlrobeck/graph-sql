@@ -51,16 +51,16 @@ pub struct DatabaseConfig {
 pub struct GraphQLConfig {
     #[serde(rename = "enable-playground")]
     pub enable_playground: bool,
-    pub depth: u32,
-    pub complexity: u32,
+    pub depth: Option<u32>,
+    pub complexity: Option<u32>,
 }
 
 impl Default for GraphQLConfig {
     fn default() -> Self {
         Self {
             enable_playground: true,
-            depth: 5,
-            complexity: 5,
+            depth: None,
+            complexity: None,
         }
     }
 }
@@ -79,8 +79,8 @@ impl Default for Config {
             },
             graphql: Some(GraphQLConfig {
                 enable_playground: true,
-                depth: 5,
-                complexity: 5,
+                depth: None,
+                complexity: None,
             }),
         }
     }
@@ -91,8 +91,16 @@ pub fn load_config(config_path: &str) -> anyhow::Result<Config> {
 
     if std::path::Path::new(config_path).exists() {
         info!("Config file found, loading from: {}", config_path);
-        let config_content = std::fs::read_to_string(config_path)?;
-        let mut config: Config = toml::from_str(&config_content)?;
+        let config_content = std::fs::read_to_string(config_path)
+            .map_err(|e| {
+                debug!("Failed to read config file: {}", e);
+                e
+            })?;
+        let mut config: Config = toml::from_str(&config_content)
+            .map_err(|e| {
+                debug!("Failed to parse config file: {}", e);
+                e
+            })?;
 
         // If use_env is true, try to get DATABASE_URL from environment
         if config.database.use_env.unwrap_or(false) {

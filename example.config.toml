@@ -17,8 +17,8 @@ enable-federation = false
 
 [database]
 use-env = true
-database-url = ""
-migrations-path = ""
+database-url = "sqlite::memory:"
+migrations-path = "examples/blog/migrations"
 
 # Advance sqlite configuration. note: if this is used, use-env, database-url will be ignored
 [database.sqlite]

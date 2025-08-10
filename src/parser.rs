@@ -1,0 +1,508 @@
+use async_graphql::dynamic::{Field, InputObject, InputValue, Object, Scalar, TypeRef};
+use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, TableConstraint};
+use tracing::{debug, warn, instrument};
+
+use crate::{
+    resolvers::{
+        column_resolver_ext, delete_resolver_ext, foreign_key_resolver_ext, insert_resolver_ext,
+        list_resolver_ext, update_resolver_ext, view_resolver_ext,
+    },
+    traits::{
+        GraphQLObjectOutput, ToGraphqlFieldExt, ToGraphqlInputValueExt, ToGraphqlMutations,
+        ToGraphqlNode, ToGraphqlObject, ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlTypeRefExt,
+    },
+    utils::{find_primary_key_column, strip_id_suffix},
+};
+
+impl ToGraphqlScalarExt for ColumnDef {
+    fn to_scalar(&self) -> async_graphql::Result<async_graphql::dynamic::Scalar> {
+        let scalar = match &self.data_type {
+            // Text types
+            DataType::Text | DataType::Varchar(_) | DataType::Char(_) | DataType::String(_) => {
+                Scalar::new(TypeRef::STRING)
+            }
+
+            // Integer types
+            DataType::Int(_)
+            | DataType::Integer(_)
+            | DataType::TinyInt(_)
+            | DataType::SmallInt(_)
+            | DataType::MediumInt(_)
+            | DataType::BigInt(_) => Scalar::new(TypeRef::INT),
+
+            // Floating point types
+            DataType::Real
+            | DataType::Float(_)
+            | DataType::DoublePrecision
+            | DataType::Decimal(_)
+            | DataType::Numeric(_) => Scalar::new(TypeRef::FLOAT),
+
+            // Boolean type
+            DataType::Boolean => Scalar::new(TypeRef::BOOLEAN),
+
+            // Binary data - represent as String (base64 encoded)
+            DataType::Blob(_) | DataType::Binary(_) | DataType::Varbinary(_) | DataType::Bytea => {
+                warn!(
+                    "Binary data type {:?} mapped to String (base64 encoded)",
+                    self.data_type
+                );
+                Scalar::new(TypeRef::STRING)
+            }
+
+            // Date/Time types - represent as String (ISO 8601 format)
+            DataType::Date
+            | DataType::Time(_, _)
+            | DataType::Timestamp(_, _)
+            | DataType::Datetime(_) => {
+                debug!(
+                    "Date/time type {:?} mapped to String (ISO 8601 format)",
+                    self.data_type
+                );
+                Scalar::new(TypeRef::STRING)
+            }
+
+            // JSON types - represent as String
+            DataType::JSON => {
+                debug!("JSON type mapped to String");
+                Scalar::new(TypeRef::STRING)
+            }
+
+            // Custom types - validate and warn if unknown
+            DataType::Custom(name, _) => {
+                // Check for known SQLite type names that might be custom parsed
+                let type_name = name.to_string().to_lowercase();
+                match type_name.as_str() {
+                    "integer" | "int" => Scalar::new(TypeRef::INT),
+                    "real" | "float" | "double" => Scalar::new(TypeRef::FLOAT),
+                    "text" | "varchar" | "char" | "string" => Scalar::new(TypeRef::STRING),
+                    "boolean" | "bool" => Scalar::new(TypeRef::BOOLEAN),
+                    "blob" | "binary" => {
+                        warn!("Binary custom type '{}' mapped to String", name);
+                        Scalar::new(TypeRef::STRING)
+                    }
+                    "json" | "jsonb" => {
+                        debug!("JSON custom type '{}' mapped to String", name);
+                        Scalar::new(TypeRef::STRING)
+                    }
+                    _ => {
+                        warn!("Unknown custom type '{}', defaulting to String", name);
+                        Scalar::new(TypeRef::STRING)
+                    }
+                }
+            }
+
+            // Array types - not directly supported, map to String (JSON array)
+            DataType::Array(_) => {
+                warn!(
+                    "Array type {:?} mapped to String (JSON array format)",
+                    self.data_type
+                );
+                Scalar::new(TypeRef::STRING)
+            }
+
+            // Unsupported types - default to String with warning
+            unsupported_type => {
+                warn!(
+                    "Unsupported data type: {:?}, defaulting to String",
+                    unsupported_type
+                );
+                Scalar::new(TypeRef::STRING)
+            }
+        };
+
+        Ok(scalar)
+    }
+}
+
+impl ToGraphqlTypeRefExt for ColumnDef {
+    fn to_type_ref(&self) -> async_graphql::Result<TypeRef> {
+        let scalar = self.to_scalar()?;
+
+        if self
+            .options
+            .iter()
+            .any(|spec| matches!(spec.option, ColumnOption::NotNull))
+        {
+            Ok(TypeRef::named_nn(scalar.type_name()))
+        } else {
+            Ok(TypeRef::named(scalar.type_name()))
+        }
+    }
+}
+
+impl ToGraphqlFieldExt for ColumnDef {
+    fn to_field_ext(
+        &self,
+        table_name: String,
+    ) -> async_graphql::Result<async_graphql::dynamic::Field> {
+        let name = self.name.to_string();
+        let column_def = self.clone();
+
+        // Check for foreign key relationships in column options
+        for column in column_def.options.iter() {
+            if let ColumnOption::ForeignKey {
+                foreign_table,
+                referred_columns,
+                on_delete: _,
+                on_update: _,
+                characteristics: _,
+            } = &column.option
+            {
+                debug!("Foreign key found {}", column_def.name);
+                let stripped_name = strip_id_suffix(&column_def.name.to_string());
+
+                let is_not_null = column_def
+                    .options
+                    .iter()
+                    .any(|spec| matches!(spec.option, ColumnOption::NotNull));
+
+                let type_ref = if is_not_null {
+                    TypeRef::named_nn(format!("{}_node", foreign_table))
+                } else {
+                    TypeRef::named(format!("{}_node", foreign_table))
+                };
+
+                if let Some(referred_column) = referred_columns.first() {
+                    return Ok(Field::new(&stripped_name, type_ref, {
+                        let foreign_table = foreign_table.to_string();
+                        let referred_column = referred_column.to_string();
+                        let column_def = column_def.clone();
+                        let table_name = table_name.clone();
+                        move |ctx| {
+                            foreign_key_resolver_ext(
+                                table_name.clone(),
+                                foreign_table.clone(),
+                                referred_column.clone(),
+                                column_def.clone(),
+                                ctx,
+                            )
+                        }
+                    }));
+                } else {
+                    warn!(
+                        "Foreign key on column '{}' has no referred columns",
+                        column_def.name
+                    );
+                }
+            }
+        }
+
+        Ok(Field::new(&name, self.to_type_ref()?, move |ctx| {
+            column_resolver_ext(table_name.clone(), column_def.clone(), ctx)
+        }))
+    }
+}
+
+impl ToGraphqlInputValueExt for ColumnDef {
+    fn to_input_value(
+        &self,
+        force_nullable: bool,
+    ) -> async_graphql::Result<async_graphql::dynamic::InputValue> {
+        let scalar = self.to_scalar()?;
+
+        let mut specs = self.options.iter();
+
+        let is_not_null = specs.any(|spec| matches!(spec.option, ColumnOption::NotNull));
+
+        let has_default_val = specs.any(|spec| matches!(spec.option, ColumnOption::Default(_)));
+
+        if force_nullable {
+            return Ok(InputValue::new(
+                self.name.to_string(),
+                TypeRef::named(scalar.type_name()),
+            ));
+        }
+
+        if is_not_null && !has_default_val {
+            Ok(InputValue::new(
+                self.name.to_string(),
+                TypeRef::named_nn(scalar.type_name()),
+            ))
+        } else {
+            Ok(InputValue::new(
+                self.name.to_string(),
+                TypeRef::named(scalar.type_name()),
+            ))
+        }
+    }
+}
+
+impl ToGraphqlNode for CreateTable {
+    #[instrument(skip(self), fields(table_name = %self.name), level = "debug")]
+    fn to_node(&self) -> async_graphql::Result<async_graphql::dynamic::Object> {
+        let name = self.name.to_string();
+
+        debug!("Creating node object for table '{}'", name);
+
+        let mut table_node = Object::new(format!("{}_node", name));
+        let mut foreign_columns = vec![];
+
+        // Process table-level foreign key constraints
+        for constraint in self.constraints.iter() {
+            if let TableConstraint::ForeignKey {
+                name: _,
+                index_name: _,
+                columns,
+                foreign_table,
+                referred_columns,
+                on_delete: _,
+                on_update: _,
+                characteristics: _,
+            } = constraint
+            {
+                for from_col in columns.iter() {
+                    if let Some(referred_column) = referred_columns.first() {
+                        debug!(
+                            "Foreign key constraint: {} -> {}.{}",
+                            from_col, foreign_table, referred_column
+                        );
+
+                        let stripped_name = strip_id_suffix(&from_col.to_string());
+
+                        if let Some(column_def) =
+                            self.columns.iter().find(|col| &col.name == from_col)
+                        {
+                            let is_not_null = column_def
+                                .options
+                                .iter()
+                                .any(|spec| matches!(spec.option, ColumnOption::NotNull));
+
+                            let type_ref = if is_not_null {
+                                TypeRef::named_nn(format!("{}_node", foreign_table))
+                            } else {
+                                TypeRef::named(format!("{}_node", foreign_table))
+                            };
+
+                            table_node = table_node.field(Field::new(&stripped_name, type_ref, {
+                                let foreign_table = foreign_table.to_string();
+                                let referred_column = referred_column.to_string();
+                                let column_def = column_def.clone();
+                                let table_name = self.name.to_string();
+                                move |ctx| {
+                                    foreign_key_resolver_ext(
+                                        table_name.clone(),
+                                        foreign_table.clone(),
+                                        referred_column.clone(),
+                                        column_def.clone(),
+                                        ctx,
+                                    )
+                                }
+                            }));
+
+                            foreign_columns.push(column_def.clone());
+                        } else {
+                            warn!(
+                                "Foreign key constraint references non-existent column '{}' in table '{}'",
+                                from_col, name
+                            );
+                        }
+                    } else {
+                        warn!(
+                            "Foreign key constraint for column '{}' has no referred columns",
+                            from_col
+                        );
+                    }
+                }
+            }
+        }
+
+        // Add regular column fields (excluding those already added as foreign key fields)
+        for col in self.columns.iter() {
+            if !foreign_columns.contains(col) {
+                let field = col.to_field_ext(name.clone())?;
+                debug!("Adding field '{}'", col.name);
+                table_node = table_node.field(field);
+            }
+        }
+
+        debug!(
+            "Created node object for table '{}' with {} fields",
+            self.name,
+            self.columns.len()
+        );
+
+        Ok(table_node)
+    }
+}
+
+impl ToGraphqlQueries for CreateTable {
+    fn to_list_query(&self) -> async_graphql::Result<(async_graphql::dynamic::InputObject, Field)> {
+        let table_name = self.name.to_string();
+
+        let input = InputObject::new(format!("list_{}_input", table_name))
+            .field(InputValue::new("page", TypeRef::named_nn(TypeRef::INT)))
+            .field(InputValue::new("limit", TypeRef::named_nn(TypeRef::INT)));
+
+        let table = self.clone();
+
+        let list_field = Field::new(
+            "list",
+            TypeRef::named_list(format!("{}_node", table_name)),
+            move |ctx| list_resolver_ext(table.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, list_field))
+    }
+
+    fn to_view_query(&self) -> async_graphql::Result<(InputObject, Field)> {
+        let table_name = self.name.to_string();
+
+        let input = InputObject::new(format!("view_{}_input", table_name))
+            .field(InputValue::new("id", TypeRef::named_nn(TypeRef::INT)));
+
+        let table = self.clone();
+
+        let view_query = Field::new(
+            "view",
+            TypeRef::named(format!("{}_node", table_name)),
+            move |ctx| view_resolver_ext(table.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, view_query))
+    }
+}
+
+impl ToGraphqlMutations for CreateTable {
+    #[instrument(skip(self), fields(table_name = %self.name), level = "debug")]
+    fn to_insert_mutation(&self) -> async_graphql::Result<(InputObject, Field)> {
+        debug!("Generating insert mutation for table '{}'", self.name);
+
+        let mut input = InputObject::new(format!("insert_{}_input", self.name));
+
+        let table_name = self.name.to_string();
+
+        for col in self.columns.iter() {
+            input = input.field(col.to_input_value(false)?);
+        }
+
+        let table_clone = self.clone();
+
+        let insert_mutation_field = Field::new(
+            format!("insert_{}", table_name),
+            TypeRef::named_nn(format!("{}_node", table_name)),
+            move |ctx| insert_resolver_ext(table_clone.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        debug!("Generated insert mutation for table '{}'", self.name);
+
+        Ok((input, insert_mutation_field))
+    }
+
+    fn to_update_mutation(&self) -> async_graphql::Result<(InputObject, Field)> {
+        let mut input = InputObject::new(format!("update_{}_input", self.name));
+        let table_name = self.name.to_string();
+
+        let pk_col = find_primary_key_column(self)?;
+
+        let pk_input = InputValue::new("id", TypeRef::named_nn(pk_col.to_scalar()?.type_name()));
+
+        for col in self.columns.iter() {
+            input = input.field(col.to_input_value(true)?);
+        }
+
+        let table_clone = self.clone();
+
+        let update_mutation_field = Field::new(
+            format!("update_{}", table_name),
+            TypeRef::named_nn(format!("{}_node", table_name)),
+            move |ctx| update_resolver_ext(table_clone.clone(), ctx),
+        )
+        .argument(pk_input)
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, update_mutation_field))
+    }
+
+    fn to_delete_mutation(&self) -> async_graphql::Result<(InputObject, Field)> {
+        let table_name = self.name.to_string();
+
+        let pk_col = find_primary_key_column(self)?;
+
+        let input = InputObject::new(format!("delete_{}_input", table_name)).field(
+            InputValue::new("id", TypeRef::named_nn(pk_col.to_scalar()?.type_name())),
+        );
+
+        let table_clone = self.clone();
+
+        let delete_mutation_field = Field::new(
+            format!("delete_{}", table_name),
+            TypeRef::named_nn(TypeRef::BOOLEAN),
+            move |ctx| delete_resolver_ext(table_clone.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "input",
+            TypeRef::named_nn(input.type_name()),
+        ));
+
+        Ok((input, delete_mutation_field))
+    }
+}
+
+impl ToGraphqlObject for CreateTable {
+    #[instrument(skip(self), fields(table_name = %self.name), level = "debug")]
+    fn to_object(&self) -> async_graphql::Result<crate::traits::GraphQLObjectOutput> {
+        debug!("Converting table '{}' to GraphQL object", self.name);
+
+        let mut inputs = vec![];
+        let mut mutations = vec![];
+        let mut queries = vec![];
+
+        let table_node = self.to_node()?;
+        let table_name = self.name.to_string();
+
+        debug!("Generating mutations for table '{}'", table_name);
+        let insert_mutation = self.to_insert_mutation()?;
+        let update_mutation = self.to_update_mutation()?;
+        let delete_mutation = self.to_delete_mutation()?;
+
+        debug!("Generating queries for table '{}'", table_name);
+        let list_query = self.to_list_query()?;
+        let view_query = self.to_view_query()?;
+
+        queries.push(
+            Object::new(table_name.to_string())
+                .field(list_query.1)
+                .field(view_query.1),
+        );
+
+        mutations.push(insert_mutation.1);
+        mutations.push(update_mutation.1);
+        mutations.push(delete_mutation.1);
+
+        inputs.push(insert_mutation.0);
+        inputs.push(update_mutation.0);
+        inputs.push(delete_mutation.0);
+        inputs.push(list_query.0);
+        inputs.push(view_query.0);
+
+        debug!(
+            "Generated GraphQL object for table '{}': {} queries, {} mutations, {} inputs",
+            table_name,
+            queries.len(),
+            mutations.len(),
+            inputs.len()
+        );
+
+        Ok(GraphQLObjectOutput {
+            table: table_node,
+            queries,
+            mutations,
+            inputs,
+        })
+    }
+}

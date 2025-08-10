@@ -47,8 +47,8 @@
 //! ```
 
 use async_graphql::dynamic::{Field, InputObject, InputValue, Object, Scalar, TypeRef};
-
-use crate::types::ForeignKeyInfo;
+use sea_query::SimpleExpr;
+use sqlparser::ast::DataType;
 
 /// Converts SQLite column definitions to GraphQL scalar types.
 ///
@@ -159,11 +159,8 @@ pub trait ToGraphqlFieldExt {
     ///
     /// A `Result` containing the generated `Field` with appropriate resolver on success,
     /// or an `async_graphql::Error` if the conversion fails.
-    fn to_field(
-        &self,
-        table_name: String,
-        f_col: Option<ForeignKeyInfo>,
-    ) -> async_graphql::Result<Field>;
+
+    fn to_field_ext(&self, table_name: String) -> async_graphql::Result<Field>;
 }
 
 /// Converts SQLite column definitions to GraphQL type references.
@@ -425,4 +422,8 @@ pub trait ToGraphqlObject {
     /// - `Vec<Field>`: All mutation field definitions to be added to the Mutation type
     /// - `Vec<InputObject>`: All input object type definitions to be registered with the schema
     fn to_object(&self) -> async_graphql::Result<GraphQLObjectOutput>;
+}
+
+pub trait ToSimpleExpr {
+    fn to_simple_expr(self, data_type: &DataType) -> async_graphql::Result<SimpleExpr>;
 }
