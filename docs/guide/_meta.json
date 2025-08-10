@@ -1,1 +1,12 @@
-["index"]
+[
+  "installation",
+  "quick-start",
+  "configuration",
+  "examples",
+  "library-api",
+  "comparisons",
+  "architecture",
+  "development",
+  "limitations",
+  "roadmap"
+]

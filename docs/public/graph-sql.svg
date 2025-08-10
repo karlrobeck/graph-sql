@@ -1,0 +1,34 @@
+<svg width="380" height="80" viewBox="0 0 380 80" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', sans-serif">
+  <!-- 
+    Logo for graph-sql
+    This logo consists of two parts:
+    1. A new, more symmetrical icon representing a graph network.
+    2. The text "GRAPH-SQL" in uppercase.
+    - Icon color changed to white with a dark stroke for visibility.
+    - SVG width increased to prevent text overflow.
+  -->
+
+  <!-- Logo Icon: A stylized, symmetrical graph network -->
+  <g id="icon" transform="translate(10, 0)">
+    <!-- Edges are drawn first, so the nodes appear on top -->
+    <line x1="45" y1="40" x2="45" y2="15" stroke="#bdc3c7" stroke-width="2.5"/>
+    <line x1="45" y1="40" x2="45" y2="65" stroke="#bdc3c7" stroke-width="2.5"/>
+    <line x1="45" y1="40" x2="20" y2="40" stroke="#bdc3c7" stroke-width="2.5"/>
+    <line x1="45" y1="40" x2="70" y2="40" stroke="#bdc3c7" stroke-width="2.5"/>
+
+    <!-- Nodes (circles) of the graph - changed to white with a dark stroke -->
+    <circle cx="45" cy="40" r="10" fill="#FFFFFF" stroke="#2c3e50" stroke-width="2.5"/>
+    <circle cx="45" cy="15" r="7" fill="#FFFFFF" stroke="#2c3e50" stroke-width="2.5"/>
+    <circle cx="45" cy="65" r="7" fill="#FFFFFF" stroke="#2c3e50" stroke-width="2.5"/>
+    <circle cx="20" cy="40" r="7" fill="#FFFFFF" stroke="#2c3e50" stroke-width="2.5"/>
+    <circle cx="70" cy="40" r="7" fill="#FFFFFF" stroke="#2c3e50" stroke-width="2.5"/>
+  </g>
+
+  <!-- Text Part of the Logo -->
+  <g id="text">
+    <text x="100" y="52" font-size="42" fill="#2c3e50" font-weight="500" letter-spacing="1">
+      GRAPH -
+      <tspan fill="#2c3e50" font-weight="bold">SQL</tspan>
+    </text>
+  </g>
+</svg>

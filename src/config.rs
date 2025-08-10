@@ -37,6 +37,12 @@ pub struct GraphSQLConfig {
     pub database: DatabaseConfig,
 }
 
+impl GraphSQLConfig {
+    pub fn from_path(path: &str) -> async_graphql::Result<Self> {
+        Ok(load_config(path)?)
+    }
+}
+
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "kebab-case")]
 pub struct ServerConfig {
