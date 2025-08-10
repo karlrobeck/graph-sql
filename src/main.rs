@@ -1,4 +1,4 @@
-use crate::cli::{Cli, Commands, Config, load_config};
+use crate::cli::{Cli, Commands, load_config};
 use async_graphql::http::GraphiQLSource;
 use async_graphql_axum::GraphQL;
 use axum::{
@@ -6,6 +6,7 @@ use axum::{
     response::{Html, IntoResponse},
 };
 use clap::Parser;
+use graph_sql::{GraphSQL, config::GraphSQLConfig};
 use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase};
 use tokio::net::TcpListener;
 use tracing::{debug, error, info, instrument};
@@ -52,6 +53,7 @@ async fn main() -> async_graphql::Result<()> {
     info!("Starting graph-sql application");
 
     let cli = Cli::parse();
+
     debug!("Parsed CLI arguments: {:?}", cli);
 
     let config =
@@ -66,112 +68,32 @@ async fn main() -> async_graphql::Result<()> {
 }
 
 #[instrument(skip(config), level = "info")]
-async fn serve_command(config: Config) -> async_graphql::Result<()> {
-    info!("Starting GraphQL server...");
-    debug!("Database URL: {}", config.database.database_url);
-    info!(
-        "Server address: {}:{}",
-        config.server.host, config.server.port
-    );
+async fn serve_command(config: GraphSQLConfig) -> async_graphql::Result<()> {
+    let pool = config.database.create_connection().await?;
 
-    // Ensure database file exists if it's a file-based SQLite database
-    ensure_database_exists(&config.database.database_url)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to ensure database exists: {}", e))?;
+    let graph_sql = GraphSQL::new(config);
 
-    debug!("Connecting to database...");
-    let db = SqlitePool::connect(&config.database.database_url).await?;
-    info!("Successfully connected to database");
+    let (router, listener) = graph_sql.build(&pool).await?;
 
-    // Run migrations if path is provided
-    if let Some(migrations_path) = &config.database.migrations_path {
-        if !migrations_path.is_empty() {
-            info!("Running migrations from: {}", migrations_path);
-            debug!("Migration path: {}", migrations_path);
-            sqlx::migrate::Migrator::new(std::path::Path::new(migrations_path))
-                .await?
-                .run(&db)
-                .await
-                .map_err(|e| anyhow::anyhow!("Migration failed: {}", e))?;
-            info!("Migrations completed successfully");
-        }
-    }
-
-    let graphql_config = config.graphql.unwrap_or_default();
-    debug!(
-        "GraphQL config: complexity={:?}, depth={:?}, playground={}",
-        graphql_config.complexity, graphql_config.depth, graphql_config.enable_playground
-    );
-
-    debug!("Starting database introspection for schema building...");
-    let mut schema = graph_sql::introspect(&db).await?;
-
-    if let Some(complexity) = graphql_config.complexity {
-        debug!("Setting query complexity limit to: {}", complexity);
-        schema = schema.limit_complexity(complexity as usize)
-    }
-
-    if let Some(depth) = graphql_config.depth {
-        debug!("Setting query depth limit to: {}", depth);
-        schema = schema.limit_depth(depth as usize);
-    }
-
-    debug!("Finalizing GraphQL schema...");
-    let schema = schema.finish()?;
-    info!("GraphQL schema built successfully");
-
-    let mut router = Router::new();
-
-    if graphql_config.enable_playground {
-        debug!("GraphiQL playground enabled");
-        router = router.route(
-            "/",
-            axum::routing::get(graphiql).post_service(GraphQL::new(schema)),
-        );
-    } else {
-        debug!("GraphiQL playground disabled");
-        router = router.route("/", axum::routing::post_service(GraphQL::new(schema)));
-    }
-
-    let bind_address = format!("{}:{}", config.server.host, config.server.port);
-    debug!("Binding server to address: {}", bind_address);
-    let listener = TcpListener::bind(&bind_address).await?;
-
-    info!("GraphQL server running at http://{}", bind_address);
-    info!("GraphiQL interface available at http://{}", bind_address);
-
-    if let Err(e) = axum::serve(listener, router).await {
-        error!("Server error: {}", e);
+    if let Err(err) = axum::serve(listener, router.into_make_service()).await {
+        error!("{}", err)
     }
 
     Ok(())
 }
 
 #[instrument(skip(config), level = "info")]
-async fn introspect_command(config: Config, output: Option<String>) -> async_graphql::Result<()> {
-    info!("Introspecting database schema...");
-    debug!("Database URL: {}", config.database.database_url);
+async fn introspect_command(
+    config: GraphSQLConfig,
+    output: Option<String>,
+) -> async_graphql::Result<()> {
+    let pool = config.database.create_connection().await?;
 
-    // Ensure database file exists if it's a file-based SQLite database
-    ensure_database_exists(&config.database.database_url)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to ensure database exists: {}", e))?;
+    let graph_sql = GraphSQL::new(config);
 
-    let db = SqlitePool::connect(&config.database.database_url).await?;
+    let tables = graph_sql.introspect(&pool).await?;
 
-    // Run migrations if path is provided
-    if let Some(migrations_path) = &config.database.migrations_path {
-        if !migrations_path.is_empty() {
-            info!("Running migrations from: {}", migrations_path);
-            sqlx::migrate::Migrator::new(std::path::Path::new(migrations_path))
-                .await?
-                .run(&db)
-                .await
-                .map_err(|e| anyhow::anyhow!("Migration failed: {}", e))?;
-        }
-    }
-
-    let schema = graph_sql::introspect(&db).await?.finish()?;
+    let schema = graph_sql.build_schema(tables)?.finish()?;
     let sdl = schema.sdl();
 
     match output {

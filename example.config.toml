@@ -5,13 +5,8 @@ port = 8000
 [graphql]
 enable-uploading = true
 enable-playground = true
-limit-depth = 5
-limit-complexity = 5
-limit-recursive-depth = 32
-limit-directives = 0
 disable-suggestions = false
 disable-introspection = false
-introspection-only = true
 enable-federation = false
 
 
@@ -24,90 +19,3 @@ migrations-path = "examples/blog/migrations"
 [database.sqlite]
 # Path to the SQLite database file. Use ":memory:" for in-memory database
 filename = "local.db"
-
-# Enable foreign key constraint enforcement. SQLx enables this by default
-# for consistency with other database flavors
-foreign-keys = true
-
-# Set the SQLITE_OPEN_MEMORY flag to create an in-memory database
-# By default, this is disabled
-in-memory = false
-
-# Set the SQLITE_OPEN_SHAREDCACHE flag to enable shared cache mode
-# By default, this is disabled
-shared-cache = false
-
-# Sets the journal mode for the database connection
-# Journal modes are ephemeral per connection, except WAL mode which persists
-# Default for non-WAL databases is 'delete', or 'memory' for in-memory databases
-journal-mode = 'off' # available: delete, truncate, persist, memory, wal, off
-
-# Sets the locking mode for the database connection
-# Default is 'normal'
-locking-mode = 'normal' # available: normal, exclusive
-
-# Sets the access mode to open the database for read-only access
-read-only = false
-
-# Sets the access mode to create the database file if it doesn't exist
-# By default, a new file will not be created if one is not found
-create-if-missing = true
-
-# Sets the capacity of the connection's statement cache (number of distinct statements)
-# Caching is handled using LRU (Least Recently Used)
-# Default cache capacity is 100 statements
-statement-cache-capacity = 100
-
-# Sets a timeout value to wait when the database is locked before returning a busy error
-# Default busy timeout is 5 seconds
-busy-timeout = 5 # in seconds
-
-# Sets the synchronous setting for the database connection
-# Controls how aggressively SQLite will write data to disk
-# Default is 'full', but 'normal' is usually sufficient in WAL mode
-synchronous = 'normal' # available: off, normal, full, extra
-
-# Sets the auto_vacuum setting for the database connection
-# Controls automatic database file size management
-# Default is 'none'. Changes only take effect after a VACUUM command for existing databases
-auto-vacumm = 'none' # available: none, full, incremental
-
-# Sets the page_size setting for the database connection
-# Default is 4096 bytes. Changes only take effect after a VACUUM command for existing databases
-# Cannot be changed in WAL mode
-page-size = 4096
-
-# Sets custom initial pragma statements for the database connection
-# Use this to set any additional SQLite pragma settings
-pragma = [{ key = "", value = "" }]
-
-# Set to true to signal that the database file is on read-only media
-# Disables locking and change detection for performance, but can produce incorrect results if file changes
-# This is different from read-only flag and should only be used when file truly cannot be modified
-immutable = false
-
-# Sets the threading mode for the database connection
-# false = OPEN_NOMUTEX (default), true = OPEN_FULLMUTEX
-# Set to true only if experiencing access violations or segfaults (significant performance penalty)
-serialized = false
-
-# Set the maximum number of commands to buffer for the worker thread before backpressure is applied
-# Use -1 for default buffering behavior
-command-buffer-size = -1
-
-# Set the maximum number of rows to buffer back to the calling task when a query is executed
-# Use -1 for default buffering behavior
-row-buffer-size = -1
-
-# Sets the VFS (Virtual File System) parameter for the database connection
-# Empty string uses the default VFS object for the operating system
-vfs = ''
-
-# Load SQLite extensions at runtime when the database connection is established
-# Extensions are loaded in the order they are specified
-extensions = [{ name = '', entry-point = '' }]
-
-# Execute 'PRAGMA optimize;' on the SQLite connection before closing
-# Collects and stores statistics to help the query planner make better decisions
-# analysis-limit sets a soft limit on maximum rows to scan per index (recommended: 400)
-optimize-on-close = { enable = true, analysis-limit = 400 }

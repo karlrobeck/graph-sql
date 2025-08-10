@@ -1,6 +1,7 @@
+use anyhow::anyhow;
 use clap::{Parser, Subcommand};
-use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use graph_sql::config::GraphSQLConfig;
+use tracing::{debug, info};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "A GraphQL server for SQL databases", long_about = None)]
@@ -24,98 +25,25 @@ pub enum Commands {
     },
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Config {
-    pub server: ServerConfig,
-    pub database: DatabaseConfig,
-    pub graphql: Option<GraphQLConfig>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ServerConfig {
-    pub host: String,
-    pub port: u16,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DatabaseConfig {
-    #[serde(rename = "database-url")]
-    pub database_url: String,
-    #[serde(rename = "use-env")]
-    pub use_env: Option<bool>,
-    #[serde(rename = "migrations-path")]
-    pub migrations_path: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct GraphQLConfig {
-    #[serde(rename = "enable-playground")]
-    pub enable_playground: bool,
-    pub depth: Option<u32>,
-    pub complexity: Option<u32>,
-}
-
-impl Default for GraphQLConfig {
-    fn default() -> Self {
-        Self {
-            enable_playground: true,
-            depth: None,
-            complexity: None,
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig {
-                host: "0.0.0.0".to_string(),
-                port: 8000,
-            },
-            database: DatabaseConfig {
-                database_url: "sqlite://local.db".to_string(),
-                use_env: Some(true),
-                migrations_path: None,
-            },
-            graphql: Some(GraphQLConfig {
-                enable_playground: true,
-                depth: None,
-                complexity: None,
-            }),
-        }
-    }
-}
-
-pub fn load_config(config_path: &str) -> anyhow::Result<Config> {
+pub fn load_config(config_path: &str) -> anyhow::Result<GraphSQLConfig> {
     debug!("Loading config from: {}", config_path);
 
     if std::path::Path::new(config_path).exists() {
         info!("Config file found, loading from: {}", config_path);
-        let config_content = std::fs::read_to_string(config_path)
-            .map_err(|e| {
-                debug!("Failed to read config file: {}", e);
-                e
-            })?;
-        let mut config: Config = toml::from_str(&config_content)
-            .map_err(|e| {
-                debug!("Failed to parse config file: {}", e);
-                e
-            })?;
 
-        // If use_env is true, try to get DATABASE_URL from environment
-        if config.database.use_env.unwrap_or(false) {
-            if let Ok(env_url) = std::env::var("DATABASE_URL") {
-                debug!("Using DATABASE_URL from environment variable");
-                config.database.database_url = env_url;
-            } else {
-                debug!("DATABASE_URL environment variable not found, using config value");
-            }
-        }
+        let config_content = std::fs::read_to_string(config_path).map_err(|e| {
+            debug!("Failed to read config file: {}", e);
+            e
+        })?;
+
+        let config: GraphSQLConfig = toml::from_str(&config_content).map_err(|e| {
+            debug!("Failed to parse config file: {}", e);
+            e
+        })?;
 
         debug!("Config loaded successfully");
-        Ok(config)
-    } else {
-        warn!("Config file not found at {}, using defaults", config_path);
-        Ok(Config::default())
+        return Ok(config);
     }
+
+    Err(anyhow!("Unable to load config"))
 }
