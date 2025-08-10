@@ -1,16 +1,69 @@
 use anyhow::anyhow;
 use clap::{Parser, Subcommand};
-use graph_sql::config::GraphSQLConfig;
-use tracing::{debug, info};
+use graph_sql::{GraphSQL, config::GraphSQLConfig};
+use tracing::{debug, error, info};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "A GraphQL server for SQL databases", long_about = None)]
 pub struct Cli {
     /// Path to configuration file
-    #[arg(short, long, default_value = "config.toml")]
+    #[arg(short, long, default_value = "graph_sql.toml")]
     pub config: String,
     #[command(subcommand)]
     pub command: Commands,
+}
+
+impl Cli {
+    async fn serve(config: GraphSQLConfig) -> async_graphql::Result<()> {
+        let pool = config.database.create_connection().await?;
+
+        let graph_sql = GraphSQL::new(config);
+
+        let (router, listener) = graph_sql.build(&pool).await?;
+
+        if let Err(err) = axum::serve(listener, router.into_make_service()).await {
+            error!("{}", err)
+        }
+
+        Ok(())
+    }
+
+    async fn introspect(
+        config: GraphSQLConfig,
+        output: Option<String>,
+    ) -> async_graphql::Result<()> {
+        let pool = config.database.create_connection().await?;
+
+        let graph_sql = GraphSQL::new(config);
+
+        let tables = graph_sql.introspect(&pool).await?;
+
+        let schema = graph_sql.build_schema(tables)?.finish()?;
+
+        let sdl = schema.sdl();
+
+        match output {
+            Some(file_path) => {
+                std::fs::write(&file_path, &sdl)
+                    .map_err(|e| anyhow::anyhow!("Failed to write to file {}: {}", file_path, e))?;
+                info!("GraphQL schema written to: {}", file_path);
+            }
+            None => {
+                println!("{}", sdl);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn start(&self) -> async_graphql::Result<()> {
+        let config = load_config(&self.config)?;
+
+        match &self.command {
+            Commands::Introspect { output } => Cli::introspect(config, output.to_owned()).await,
+            Commands::Serve => Cli::serve(config).await,
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]

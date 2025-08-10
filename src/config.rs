@@ -89,6 +89,7 @@ impl DatabaseConfig {
     pub async fn create_connection(&self) -> sqlx::Result<SqlitePool> {
         if let Some(sqlite) = &self.sqlite {
             let options = sqlite.apply();
+
             return SqlitePool::connect_with(options).await;
         }
 
