@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use graph_sql::{GraphSQL, config::load_config};
 
 #[tokio::main]
@@ -11,7 +13,9 @@ async fn main() -> async_graphql::Result<()> {
     let db = config.database.create_connection().await?;
 
     println!("📊 Running database migrations...");
-    sqlx::migrate!("examples/ecommerce/migrations")
+
+    sqlx::migrate::Migrator::new(Path::new("./migrations"))
+        .await?
         .run(&db)
         .await
         .map_err(|e| anyhow::anyhow!("Migration failed: {}", e))?;
