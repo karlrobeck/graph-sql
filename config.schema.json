@@ -1,0 +1,441 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/karlrobeck/graph-sql/config.schema.json",
+  "title": "Graph-SQL Configuration Schema",
+  "description": "Configuration schema for Graph-SQL - a high-performance Rust CLI tool that automatically introspects SQLite databases and generates complete GraphQL APIs",
+  "type": "object",
+  "required": ["server", "graphql", "database"],
+  "additionalProperties": false,
+  "properties": {
+    "server": {
+      "title": "Server Configuration",
+      "description": "HTTP server configuration settings",
+      "type": "object",
+      "required": ["host", "port"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "title": "Host Address",
+          "description": "The host address to bind the server to (e.g., \"127.0.0.1\", \"0.0.0.0\")",
+          "type": "string",
+          "default": "127.0.0.1",
+          "examples": ["127.0.0.1", "0.0.0.0", "localhost"]
+        },
+        "port": {
+          "title": "Port Number",
+          "description": "The port number to listen on (e.g., 3000, 8080)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 3000,
+          "examples": [3000, 8080, 4000]
+        }
+      }
+    },
+    "graphql": {
+      "title": "GraphQL Configuration",
+      "description": "GraphQL schema configuration and security settings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enable-uploading": {
+          "title": "Enable File Uploading",
+          "description": "Enable file uploading capabilities - registers the Upload scalar type for handling multipart file uploads",
+          "type": "boolean",
+          "default": true
+        },
+        "enable-playground": {
+          "title": "Enable GraphQL Playground",
+          "description": "Enable GraphQL Playground in development - provides an interactive GraphQL IDE for testing queries",
+          "type": "boolean",
+          "default": false
+        },
+        "limit-depth": {
+          "title": "Query Depth Limit",
+          "description": "Maximum query depth allowed - prevents deeply nested queries that could cause performance issues",
+          "type": "integer",
+          "minimum": 1,
+          "examples": [10, 15, 20]
+        },
+        "limit-complexity": {
+          "title": "Query Complexity Limit",
+          "description": "Maximum query complexity score allowed - uses a scoring system to prevent overly complex queries",
+          "type": "integer",
+          "minimum": 1,
+          "examples": [1000, 5000, 10000]
+        },
+        "limit-recursive-depth": {
+          "title": "Recursive Depth Limit",
+          "description": "Maximum recursive depth in selections - prevents stack overflow from excessive recursion",
+          "type": "integer",
+          "minimum": 1,
+          "default": 32,
+          "examples": [16, 32, 64]
+        },
+        "limit-directives": {
+          "title": "Directives Limit",
+          "description": "Maximum number of directives per field - limits directive usage to prevent abuse",
+          "type": "integer",
+          "minimum": 1,
+          "examples": [10, 50, 100]
+        },
+        "disable-suggestions": {
+          "title": "Disable Field Suggestions",
+          "description": "Disable GraphQL field name suggestions in error messages - improves security by not revealing schema structure",
+          "type": "boolean",
+          "default": false
+        },
+        "disable-introspection": {
+          "title": "Disable Introspection",
+          "description": "Disable introspection queries completely - prevents schema discovery in production environments",
+          "type": "boolean",
+          "default": false
+        },
+        "introspection-only": {
+          "title": "Introspection Only Mode",
+          "description": "Only allow introspection queries, block all others - useful for schema analysis tools without exposing data",
+          "type": "boolean",
+          "default": false
+        },
+        "enable-federation": {
+          "title": "Enable Federation",
+          "description": "Enable Apollo Federation support - allows this service to participate in a federated GraphQL architecture",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "database": {
+      "title": "Database Configuration",
+      "description": "Database connection configuration and SQLite-specific settings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "use-env": {
+          "title": "Use Environment Variable",
+          "description": "Use DATABASE_URL environment variable - when true, attempts to connect using the DATABASE_URL environment variable",
+          "type": "boolean",
+          "default": true
+        },
+        "database-url": {
+          "title": "Database URL",
+          "description": "Direct database connection URL - used when use-env is false or DATABASE_URL is not set",
+          "type": "string",
+          "examples": [
+            "sqlite://data.db",
+            "sqlite:///path/to/database.db",
+            "sqlite://:memory:"
+          ]
+        },
+        "migration-path": {
+          "title": "Migration Path",
+          "description": "Path to database migration files - used for running database schema migrations",
+          "type": "string",
+          "examples": ["migrations", "./db/migrations", "/app/migrations"]
+        },
+        "sqlite": {
+          "title": "SQLite Configuration",
+          "description": "SQLite-specific connection configuration providing fine-grained control over SQLite connection parameters",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "filename": {
+              "title": "Database Filename",
+              "description": "Database file path - set to \":memory:\" for in-memory database",
+              "type": "string",
+              "default": "local.db",
+              "examples": [
+                "app.db",
+                "data.sqlite",
+                ":memory:",
+                "/path/to/database.db"
+              ]
+            },
+            "foreign-keys": {
+              "title": "Foreign Key Enforcement",
+              "description": "Enable foreign key constraint enforcement - SQLx enables this by default unlike SQLite's default behavior",
+              "type": "boolean",
+              "default": true
+            },
+            "in-memory": {
+              "title": "In-Memory Database",
+              "description": "Create database in memory instead of on disk - sets the SQLITE_OPEN_MEMORY flag",
+              "type": "boolean",
+              "default": false
+            },
+            "shared-cache": {
+              "title": "Shared Cache Mode",
+              "description": "Enable shared cache mode - sets the SQLITE_OPEN_SHAREDCACHE flag for sharing data between connections",
+              "type": "boolean",
+              "default": false
+            },
+            "journal-mode": {
+              "title": "Journal Mode",
+              "description": "Journal mode for crash recovery and concurrency",
+              "type": "string",
+              "enum": ["delete", "truncate", "persist", "memory", "wal", "off"],
+              "default": "off",
+              "enumDescriptions": [
+                "DELETE mode - journal file is deleted after each transaction (default for file databases)",
+                "TRUNCATE mode - journal file is truncated to zero length instead of deleted",
+                "PERSIST mode - journal file is not deleted, header is overwritten with zeros",
+                "MEMORY mode - journal is stored in memory instead of on disk (default for in-memory databases)",
+                "WAL mode - Write-Ahead Logging, best for concurrent read/write access, persists across connections",
+                "OFF mode - no journal, fastest but no crash recovery"
+              ]
+            },
+            "locking-mode": {
+              "title": "Locking Mode",
+              "description": "Locking mode for database access",
+              "type": "string",
+              "enum": ["normal", "exclusive"],
+              "default": "normal",
+              "enumDescriptions": [
+                "NORMAL mode - database file is unlocked after each read or write transaction",
+                "EXCLUSIVE mode - database file remains locked, preventing other processes from accessing it"
+              ]
+            },
+            "read-only": {
+              "title": "Read-Only Mode",
+              "description": "Open database in read-only mode",
+              "type": "boolean",
+              "default": false
+            },
+            "create-if-missing": {
+              "title": "Create If Missing",
+              "description": "Create database file if it doesn't exist",
+              "type": "boolean",
+              "default": true
+            },
+            "statement-cache-capacity": {
+              "title": "Statement Cache Capacity",
+              "description": "Maximum number of prepared statements to cache - uses LRU eviction when capacity is reached",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535,
+              "default": 100,
+              "examples": [50, 100, 200, 500]
+            },
+            "busy-timeout": {
+              "title": "Busy Timeout",
+              "description": "Timeout in seconds when database is locked - how long to wait before returning SQLITE_BUSY error",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535,
+              "default": 5,
+              "examples": [1, 5, 10, 30]
+            },
+            "synchronous": {
+              "title": "Synchronous Mode",
+              "description": "Synchronization mode for durability vs performance",
+              "type": "string",
+              "enum": ["off", "normal", "full", "extra"],
+              "default": "normal",
+              "enumDescriptions": [
+                "OFF mode - no syncing, fastest but least safe",
+                "NORMAL mode - syncs at critical moments, good balance of safety and performance (recommended for WAL mode)",
+                "FULL mode - syncs after every write, safest but slowest (default)",
+                "EXTRA mode - even more syncing than FULL, maximum safety"
+              ]
+            },
+            "auto-vacuum": {
+              "title": "Auto Vacuum Mode",
+              "description": "Automatic vacuum mode for database maintenance",
+              "type": "string",
+              "enum": ["none", "full", "incremental"],
+              "default": "none",
+              "enumDescriptions": [
+                "No automatic vacuuming - deleted space is not automatically reclaimed",
+                "Full automatic vacuuming - database file shrinks automatically when data is deleted",
+                "Incremental vacuuming - space is marked for reclaim but manual PRAGMA incremental_vacuum is needed"
+              ]
+            },
+            "page-size": {
+              "title": "Page Size",
+              "description": "Page size in bytes - must be a power of 2 between 512 and 65536",
+              "type": "integer",
+              "minimum": 512,
+              "maximum": 65536,
+              "default": 4096,
+              "examples": [1024, 2048, 4096, 8192, 16384]
+            },
+            "pragma": {
+              "title": "Custom PRAGMA Statements",
+              "description": "Custom PRAGMA statements to execute on connection - allows setting additional SQLite configuration options",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["key", "value"],
+                "additionalProperties": false,
+                "properties": {
+                  "key": {
+                    "title": "PRAGMA Key",
+                    "description": "PRAGMA option name",
+                    "type": "string",
+                    "examples": [
+                      "cache_size",
+                      "temp_store",
+                      "mmap_size",
+                      "analysis_limit"
+                    ]
+                  },
+                  "value": {
+                    "title": "PRAGMA Value",
+                    "description": "PRAGMA option value",
+                    "type": "string",
+                    "examples": ["10000", "memory", "268435456", "1000"]
+                  }
+                }
+              }
+            },
+            "immutable": {
+              "title": "Immutable Database",
+              "description": "Mark database as immutable/read-only media - optimization for read-only databases on read-only storage",
+              "type": "boolean",
+              "default": false
+            },
+            "serialized": {
+              "title": "Serialized Threading",
+              "description": "Use serialized threading mode - enable only if experiencing concurrency issues, has performance cost",
+              "type": "boolean",
+              "default": false
+            },
+            "command-buffer-size": {
+              "title": "Command Buffer Size",
+              "description": "Command buffer size for worker thread backpressure - set to -1 to use SQLx default",
+              "type": "integer",
+              "minimum": -1,
+              "examples": [-1, 1024, 4096, 8192]
+            },
+            "row-buffer-size": {
+              "title": "Row Buffer Size",
+              "description": "Row buffer size for result streaming backpressure - set to -1 to use SQLx default",
+              "type": "integer",
+              "minimum": -1,
+              "examples": [-1, 512, 1024, 2048]
+            },
+            "vfs": {
+              "title": "Virtual File System",
+              "description": "Virtual File System name - allows using custom VFS implementations (empty uses OS default)",
+              "type": "string",
+              "examples": ["unix-dotfile", "unix-excl", "unix-none"]
+            },
+            "extensions": {
+              "title": "SQLite Extensions",
+              "description": "SQLite extensions to load at connection time - enables additional functionality like spatial operations",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "title": "Extension Name",
+                    "description": "Extension name or file path",
+                    "type": "string",
+                    "examples": [
+                      "mod_spatialite",
+                      "fts5",
+                      "rtree",
+                      "./custom_extension.so"
+                    ]
+                  },
+                  "entry-point": {
+                    "title": "Entry Point",
+                    "description": "Custom entry point function name - used when the extension doesn't follow standard naming conventions",
+                    "type": "string",
+                    "examples": [
+                      "sqlite3_extension_init",
+                      "custom_init_function"
+                    ]
+                  }
+                }
+              }
+            },
+            "optimize-on-close": {
+              "title": "Optimize on Close",
+              "description": "Execute PRAGMA optimize on connection close - recommended for long-lived databases to maintain query performance",
+              "type": "object",
+              "required": ["enable"],
+              "additionalProperties": false,
+              "properties": {
+                "enable": {
+                  "title": "Enable Optimization",
+                  "description": "Enable optimization on close",
+                  "type": "boolean"
+                },
+                "analysis-limit": {
+                  "title": "Analysis Limit",
+                  "description": "Maximum number of rows to analyze per index - limits the scope of optimization analysis",
+                  "type": "integer",
+                  "minimum": 1,
+                  "examples": [400, 1000, 5000]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "server": {
+        "host": "127.0.0.1",
+        "port": 3000
+      },
+      "graphql": {
+        "enable-playground": true,
+        "limit-complexity": 1000,
+        "disable-introspection": false
+      },
+      "database": {
+        "use-env": false,
+        "sqlite": {
+          "filename": "app.db",
+          "foreign-keys": true,
+          "journal-mode": "wal",
+          "synchronous": "normal"
+        }
+      }
+    },
+    {
+      "server": {
+        "host": "0.0.0.0",
+        "port": 8080
+      },
+      "graphql": {
+        "enable-playground": false,
+        "limit-complexity": 5000,
+        "limit-depth": 15,
+        "disable-introspection": true,
+        "disable-suggestions": true
+      },
+      "database": {
+        "use-env": false,
+        "sqlite": {
+          "filename": "production.db",
+          "foreign-keys": true,
+          "journal-mode": "wal",
+          "synchronous": "normal",
+          "busy-timeout": 30,
+          "statement-cache-capacity": 200,
+          "pragma": [
+            {
+              "key": "cache_size",
+              "value": "10000"
+            },
+            {
+              "key": "temp_store",
+              "value": "memory"
+            }
+          ],
+          "optimize-on-close": {
+            "enable": true,
+            "analysis-limit": 1000
+          }
+        }
+      }
+    }
+  ]
+}

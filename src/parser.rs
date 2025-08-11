@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use async_graphql::dynamic::{
     Enum, EnumItem, Field, InputObject, InputValue, Object, Scalar, TypeRef,
 };
@@ -120,7 +119,7 @@ impl ToGraphqlScalarExt for ColumnDef {
 
 impl ToGraphqlEnumExt for ColumnDef {
     fn to_enum(&self, table_name: &str) -> async_graphql::Result<Enum> {
-        let mut graphql_enum = if self.data_type.to_string().starts_with("enum_") {
+        let mut graphql_enum = if self.data_type.to_string().starts_with("enum_text") {
             Enum::new(format!("{}_{}_enum", table_name, self.name))
         } else {
             return Err(async_graphql::Error::new("Cannot convert into enum"));
@@ -159,7 +158,7 @@ impl ToGraphqlEnumExt for ColumnDef {
 
 impl ToGraphqlTypeRefExt for ColumnDef {
     fn to_type_ref(&self, table_name: &str) -> async_graphql::Result<TypeRef> {
-        let graphql_type = if self.data_type.to_string().starts_with("enum_") {
+        let graphql_type = if self.data_type.to_string().starts_with("enum_text") {
             let enum_value = self.to_enum(table_name)?;
             enum_value.type_name().to_owned()
         } else {
@@ -246,7 +245,7 @@ impl ToGraphqlInputValueExt for ColumnDef {
         table_name: &str,
         force_nullable: bool,
     ) -> async_graphql::Result<async_graphql::dynamic::InputValue> {
-        let graphql_type = if self.data_type.to_string().starts_with("enum_") {
+        let graphql_type = if self.data_type.to_string().starts_with("enum_text") {
             let enum_value = self.to_enum(table_name)?;
             enum_value.type_name().to_owned()
         } else {

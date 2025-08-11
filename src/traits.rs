@@ -30,21 +30,6 @@
 //! - **Pagination support**: List queries include offset-based pagination
 //! - **Complete CRUD**: Full Create, Read, Update, Delete operation generation
 //! - **Dynamic schema**: All types are generated at runtime using async-graphql's dynamic API
-//!
-//! ## Usage Example
-//!
-//! ```rust
-//! // Generate complete GraphQL schema for a database table
-//! let (node, queries, mutations, inputs) = sqlite_table.to_object()?;
-//!
-//! // Register with GraphQL schema builder
-//! let mut schema = Schema::build(query_type, mutation_type, None)
-//!     .register(node);
-//!
-//! for query in queries { schema = schema.register(query); }
-//! for mutation in mutations { /* add to mutation type */ }
-//! for input in inputs { schema = schema.register(input); }
-//! ```
 
 use async_graphql::dynamic::{Enum, Field, InputObject, InputValue, Object, Scalar, TypeRef};
 use sea_query::SimpleExpr;
@@ -60,19 +45,6 @@ use sqlparser::ast::DataType;
 /// - `BOOLEAN` → `Boolean`
 /// - `BLOB` → `String` (as base64 encoded string)
 /// - Custom types → `String` (fallback)
-///
-/// # Examples
-///
-/// ```rust
-/// // For a ColumnDef representing an INTEGER column
-/// let scalar = column_def.to_scalar()?; // Returns Scalar::new(TypeRef::INT)
-///
-/// // For a ColumnDef representing a TEXT column  
-/// let scalar = column_def.to_scalar()?; // Returns Scalar::new(TypeRef::STRING)
-///
-/// // For a ColumnDef representing a REAL column
-/// let scalar = column_def.to_scalar()?; // Returns Scalar::new(TypeRef::FLOAT)
-/// ```
 pub trait ToGraphqlScalarExt {
     /// Converts the implementor to a GraphQL scalar type.
     ///
@@ -83,7 +55,23 @@ pub trait ToGraphqlScalarExt {
     fn to_scalar(&self) -> async_graphql::Result<Scalar>;
 }
 
+/// Converts SQLite column definitions to GraphQL enum types.
+///
+/// This trait handles the conversion of CHECK constraints with IN clauses
+/// to GraphQL enum types, enabling type-safe value restrictions at the
+/// GraphQL schema level.
 pub trait ToGraphqlEnumExt {
+    /// Converts the implementor to a GraphQL enum type.
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - The name of the database table that owns this column.
+    ///   Used to generate unique enum type names.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the generated `Enum` on success, or an `async_graphql::Error`
+    /// if the conversion fails.
     fn to_enum(&self, table_name: &str) -> async_graphql::Result<Enum>;
 }
 
@@ -98,19 +86,6 @@ pub trait ToGraphqlEnumExt {
 /// - `NOT NULL` columns with default values → Nullable input (`Type`)
 /// - Nullable columns → Nullable input (`Type`)
 /// - When `force_nullable` is true → Always nullable (used for update mutations)
-///
-/// # Examples
-///
-/// ```rust
-/// // For a NOT NULL column without default value
-/// let input = column_def.to_input_value(false)?; // Non-nullable: name: String!
-///
-/// // For a NOT NULL column with default value
-/// let input = column_def.to_input_value(false)?; // Nullable: created_at: String
-///
-/// // Force nullable even for NOT NULL columns (useful for update mutations)
-/// let input = column_def.to_input_value(true)?; // Always nullable: name: String
-/// ```
 pub trait ToGraphqlInputValueExt {
     /// Converts the implementor to a GraphQL input value.
     ///
@@ -140,19 +115,6 @@ pub trait ToGraphqlInputValueExt {
 /// name ending with `_id` and matching foreign key info), the field name is automatically
 /// stripped of the `_id` suffix and the field type becomes a reference to the related
 /// table's node type instead of the raw scalar value.
-///
-/// # Examples
-///
-/// ```rust
-/// // Convert a regular column to a GraphQL field
-/// let field = column_def.to_field("users".to_string(), None)?;
-/// // Creates: name: String! (for a NOT NULL TEXT column named "name")
-///
-/// // Convert a foreign key column to a GraphQL field  
-/// let foreign_key = ForeignKeyInfo { table: "categories", from: "category_id", to: "id" };
-/// let field = column_def.to_field("posts".to_string(), Some(foreign_key))?;
-/// // Creates: category: category_node! (strips "_id" suffix and references the related table)
-/// ```
 pub trait ToGraphqlFieldExt {
     /// Converts the implementor to a GraphQL field.
     ///
@@ -167,7 +129,6 @@ pub trait ToGraphqlFieldExt {
     ///
     /// A `Result` containing the generated `Field` with appropriate resolver on success,
     /// or an `async_graphql::Error` if the conversion fails.
-
     fn to_field(&self, table_name: String) -> async_graphql::Result<Field>;
 }
 
@@ -180,19 +141,6 @@ pub trait ToGraphqlFieldExt {
 /// **Nullability Logic**:
 /// - Columns with `NOT NULL` constraint AND no default value → Non-nullable (`Type!`)
 /// - All other columns (nullable, or NOT NULL with default) → Nullable (`Type`)
-///
-/// # Examples
-///
-/// ```rust
-/// // For a NOT NULL INTEGER column without default
-/// let type_ref = column_def.to_type_ref()?; // Returns TypeRef::named_nn(TypeRef::INT)
-///
-/// // For a nullable TEXT column
-/// let type_ref = column_def.to_type_ref()?; // Returns TypeRef::named(TypeRef::STRING)
-///
-/// // For a NOT NULL column with default value
-/// let type_ref = column_def.to_type_ref()?; // Returns TypeRef::named(TypeRef::STRING)
-/// ```
 pub trait ToGraphqlTypeRefExt {
     /// Converts the implementor to a GraphQL type reference.
     ///
@@ -216,25 +164,6 @@ pub trait ToGraphqlTypeRefExt {
 /// - UPDATE mutations make all fields optional and require separate `id` argument
 /// - DELETE mutations return a boolean success indicator with `rows_affected` count
 /// - All mutations use the table's primary key for record identification
-///
-/// # Examples
-///
-/// ```rust
-/// // Generate insert mutation for a table
-/// let (input, field) = table.to_insert_mutation()?;
-/// // Creates: insert_tablename(input: insert_tablename_input!): tablename_node!
-/// // Input excludes primary key, includes all other columns based on nullability
-///
-/// // Generate update mutation for a table  
-/// let (input, field) = table.to_update_mutation()?;
-/// // Creates: update_tablename(id: Int!, input: update_tablename_input!): tablename_node!
-/// // All input fields are optional to allow partial updates
-///
-/// // Generate delete mutation for a table
-/// let (input, field) = table.to_delete_mutation()?;
-/// // Creates: delete_tablename(input: delete_tablename_input!): Boolean!
-/// // Returns: { rows_affected: Int! }
-/// ```
 pub trait ToGraphqlMutations {
     /// Generates an INSERT mutation for creating new records.
     ///
@@ -286,20 +215,6 @@ pub trait ToGraphqlMutations {
 /// - VIEW queries fetch single records by primary key ID
 /// - Both return minimal data (primary key info) that gets resolved by field resolvers
 /// - Query resolvers return arrays of `{name: "column_name", id: value}` objects
-///
-/// # Examples
-///
-/// ```rust
-/// // Generate list query for paginated results
-/// let (input, field) = table.to_list_query()?;
-/// // Creates: list(input: list_tablename_input!): [tablename_node]
-/// // Input type: { page: Int!, limit: Int! }
-///
-/// // Generate view query for single record
-/// let (input, field) = table.to_view_query()?;  
-/// // Creates: view(input: view_tablename_input!): tablename_node
-/// // Input type: { id: Int! }
-/// ```
 pub trait ToGraphqlQueries {
     /// Generates a LIST query for fetching multiple records with pagination.
     ///
@@ -338,21 +253,6 @@ pub trait ToGraphqlQueries {
 /// - Foreign key columns get `foreign_key_resolver` that joins to related tables
 /// - Field names for foreign keys are automatically stripped of `_id` suffix
 /// - Each field resolver receives parent context containing `{name: "pk_column", id: pk_value}`
-///
-/// # Examples
-///
-/// ```rust
-/// // Convert a table to a GraphQL node object
-/// let node = table.to_node()?;
-/// // Creates an object like:
-/// // type tablename_node {
-/// //   id: Int!
-/// //   name: String!
-/// //   email: String
-/// //   category: category_node!  // Foreign key relationship
-/// //   created_at: String
-/// // }
-/// ```
 pub trait ToGraphqlNode {
     /// Converts the implementor to a GraphQL object representing a database record.
     ///
@@ -376,6 +276,7 @@ pub trait ToGraphqlNode {
 /// - `queries`: Query objects containing list and view operations
 /// - `mutations`: Mutation field definitions for insert, update, delete
 /// - `inputs`: Input object type definitions for queries and mutations
+/// - `enums`: Enum type definitions for CHECK constraint columns
 pub struct GraphQLObjectOutput {
     pub table: Object,
     pub queries: Vec<Object>,
@@ -396,18 +297,6 @@ pub struct GraphQLObjectOutput {
 /// - Produces separate mutation fields for `insert_tablename`, `update_tablename`, `delete_tablename`
 /// - Creates all necessary input types for mutations and queries
 /// - The resulting schema follows the nested query pattern: `{ tablename { list(...) } }`
-///
-/// # Examples
-///
-/// ```rust
-/// // Generate complete GraphQL schema for a table
-/// let (node, queries, mutations, inputs) = table.to_object()?;
-/// // Returns:
-/// // - node: The main tablename_node object type
-/// // - queries: Vec containing the tablename query object with list/view operations
-/// // - mutations: Vec of mutation fields (insert, update, delete)  
-/// // - inputs: Vec of all input object types for mutations and queries
-/// ```
 pub trait ToGraphqlObject {
     /// Generates a complete GraphQL schema representation of the database table.
     ///
@@ -416,23 +305,42 @@ pub trait ToGraphqlObject {
     /// - A query object containing LIST and VIEW operations (via `to_list_query()` and `to_view_query()`)
     /// - INSERT, UPDATE, and DELETE mutation operations (via mutation traits)
     /// - All corresponding input object types for the operations
+    /// - Enum types for columns with CHECK constraints
     ///
     /// The generated components must be registered with the GraphQL schema builder:
     /// - The node object is registered as a type
     /// - Query objects are added as fields to the root Query type
     /// - Mutation fields are added to the root Mutation type  
     /// - Input objects are registered as types
+    /// - Enum types are registered as types
     ///
     /// # Returns
     ///
-    /// A tuple containing:
-    /// - `Object`: The main table node object type
-    /// - `Vec<Object>`: Query object containing list and view operations to be added to Query type
-    /// - `Vec<Field>`: All mutation field definitions to be added to the Mutation type
-    /// - `Vec<InputObject>`: All input object type definitions to be registered with the schema
+    /// A `GraphQLObjectOutput` struct containing:
+    /// - `table`: The main table node object type
+    /// - `queries`: Query objects containing list and view operations to be added to Query type
+    /// - `mutations`: All mutation field definitions to be added to the Mutation type
+    /// - `inputs`: All input object type definitions to be registered with the schema
+    /// - `enums`: All enum type definitions to be registered with the schema
     fn to_object(&self) -> async_graphql::Result<GraphQLObjectOutput>;
 }
 
+/// Converts values to sea-query SimpleExpr for SQL generation.
+///
+/// This trait provides functionality to convert various value types into
+/// sea-query `SimpleExpr` instances, which are used for parameterized SQL
+/// query generation. The conversion takes into account the expected data type
+/// to ensure proper type casting and validation.
 pub trait ToSimpleExpr {
+    /// Converts the implementor to a sea-query SimpleExpr.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_type` - The expected SQLite data type for type validation and casting
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the generated `SimpleExpr` on success, or an `async_graphql::Error`
+    /// if the conversion fails due to type mismatch or invalid value format.
     fn to_simple_expr(self, data_type: &DataType) -> async_graphql::Result<SimpleExpr>;
 }
