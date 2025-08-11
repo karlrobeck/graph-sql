@@ -17,6 +17,13 @@ impl Cli {
     async fn serve(config: GraphSQLConfig) -> async_graphql::Result<()> {
         let pool = config.database.create_connection().await?;
 
+        if let Some(path) = &config.database.migration_path {
+            sqlx::migrate::Migrator::new(path.clone())
+                .await?
+                .run(&pool)
+                .await?;
+        }
+
         let graph_sql = GraphSQL::new(config);
 
         let (router, listener) = graph_sql.build(&pool).await?;
@@ -33,6 +40,13 @@ impl Cli {
         output: Option<String>,
     ) -> async_graphql::Result<()> {
         let pool = config.database.create_connection().await?;
+
+        if let Some(path) = &config.database.migration_path {
+            sqlx::migrate::Migrator::new(path.clone())
+                .await?
+                .run(&pool)
+                .await?;
+        }
 
         let graph_sql = GraphSQL::new(config);
 

@@ -132,7 +132,7 @@ impl DatabaseConfig {
         }
 
         if let Some(db_url) = &self.database_url {
-            return SqlitePool::connect(&db_url).await;
+            return SqlitePool::connect(db_url).await;
         }
 
         unimplemented!()
@@ -206,7 +206,7 @@ impl SqliteConfig {
             .immutable(self.immutable.unwrap_or(false));
 
         if let Some(vfs) = &self.vfs {
-            if vfs != "" {
+            if !vfs.is_empty() {
                 options = options.vfs(vfs.clone())
             }
         }

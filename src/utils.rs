@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use async_graphql::dynamic::ValueAccessor;
 use sea_query::SimpleExpr;
 use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, TableConstraint};
-use tracing::{warn, debug, instrument};
+use tracing::{debug, instrument, warn};
 
 use crate::traits::ToSimpleExpr;
 
@@ -61,7 +61,7 @@ pub fn strip_id_suffix(name: &str) -> String {
 #[instrument(skip(table), fields(table_name = %table.name), level = "debug")]
 pub fn find_primary_key_column(table: &CreateTable) -> anyhow::Result<&ColumnDef> {
     debug!("Looking for primary key in table '{}'", table.name);
-    
+
     // Check for explicit UNIQUE PRIMARY KEY column options
     if let Some(pk_col) = table.columns.iter().find(|col| {
         col.options.iter().any(|opt| {
@@ -74,7 +74,10 @@ pub fn find_primary_key_column(table: &CreateTable) -> anyhow::Result<&ColumnDef
             )
         })
     }) {
-        debug!("Found primary key column '{}' via column option", pk_col.name);
+        debug!(
+            "Found primary key column '{}' via column option",
+            pk_col.name
+        );
         return Ok(pk_col);
     }
 
@@ -82,7 +85,10 @@ pub fn find_primary_key_column(table: &CreateTable) -> anyhow::Result<&ColumnDef
     debug!("Checking table-level PRIMARY KEY constraints");
     for constraint in &table.constraints {
         if let TableConstraint::PrimaryKey { columns, .. } = constraint {
-            debug!("Found table-level PRIMARY KEY constraint with {} columns", columns.len());
+            debug!(
+                "Found table-level PRIMARY KEY constraint with {} columns",
+                columns.len()
+            );
             if let Some(pk_col_spec) = columns.first() {
                 // Extract column name from the column field which contains an OrderByExpr
                 if let sqlparser::ast::Expr::Identifier(ident) = &pk_col_spec.column.expr {
@@ -91,13 +97,15 @@ pub fn find_primary_key_column(table: &CreateTable) -> anyhow::Result<&ColumnDef
 
                     if let Some(pk_col) = table.columns.iter().find(|col| col.name == *column_name)
                     {
-                        debug!("Found primary key column '{}' via table constraint", pk_col.name);
+                        debug!(
+                            "Found primary key column '{}' via table constraint",
+                            pk_col.name
+                        );
                         return Ok(pk_col);
                     } else {
                         warn!(
                             "Primary key constraint references non-existent column '{}' in table '{}'",
-                            column_name,
-                            table.name
+                            column_name, table.name
                         );
                         return Err(anyhow!(
                             "Primary key constraint references non-existent column '{}' in table '{}'",
@@ -210,6 +218,14 @@ impl ToSimpleExpr for ValueAccessor<'_> {
             DataType::Float(_) => self.f64().map(Into::into),
             DataType::Int(_) => self.i64().map(Into::into),
             DataType::Blob(_) => self.string().map(Into::into),
+            // enum
+            DataType::Custom(name, _) => {
+                if name.to_string().starts_with("enum_") {
+                    self.enum_name().map(Into::into)
+                } else {
+                    panic!("Unsupported data type")
+                }
+            }
             _ => panic!("Unsupported data type"),
         }
     }

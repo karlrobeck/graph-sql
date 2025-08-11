@@ -5,7 +5,7 @@ use async_graphql::{
     dynamic::{FieldFuture, ResolverContext},
 };
 use base64::{Engine as _, engine::general_purpose};
-use sea_query::{Alias, ColumnDef, Expr, Query, SqliteQueryBuilder};
+use sea_query::{Alias, Expr, Query, SqliteQueryBuilder};
 use sqlparser::ast::{ColumnOption, CreateTable};
 use sqlx::SqlitePool;
 use tracing::debug;
@@ -15,7 +15,7 @@ use crate::{
     traits::ToSimpleExpr,
 };
 
-pub fn list_resolver_ext(table_info: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn list_resolver(table_info: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing list resolver for table: {:?}", table_info.name);
 
@@ -79,7 +79,7 @@ pub fn list_resolver_ext(table_info: CreateTable, ctx: ResolverContext<'_>) -> F
     })
 }
 
-pub fn view_resolver_ext(table_info: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn view_resolver(table_info: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing view resolver for table: {:?}", table_info.name);
 
@@ -144,7 +144,7 @@ pub fn view_resolver_ext(table_info: CreateTable, ctx: ResolverContext<'_>) -> F
     })
 }
 
-pub fn foreign_key_resolver_ext(
+pub fn foreign_key_resolver(
     table_name: String,
     foreign_table: String,
     reffered_column: String,
@@ -217,64 +217,6 @@ pub fn foreign_key_resolver_ext(
 }
 
 pub fn column_resolver(
-    table_name: String,
-    col: ColumnDef,
-    ctx: ResolverContext<'_>,
-) -> FieldFuture<'_> {
-    FieldFuture::new(async move {
-        debug!(
-            "Executing column resolver for table: {} column: {}",
-            table_name,
-            col.get_column_name()
-        );
-
-        let db = ctx.data::<SqlitePool>()?;
-
-        let parent_value = ctx
-            .parent_value
-            .as_value()
-            .ok_or(anyhow::anyhow!("Unable to get parent value"))?
-            .clone();
-
-        let parent_value = parent_value.into_json()?;
-
-        let json_object = parent_value
-            .as_object()
-            .ok_or(anyhow::anyhow!("Unable to get json object"))?;
-
-        let pk_name = json_object
-            .get("name")
-            .map(|val| val.as_str())
-            .ok_or(anyhow::anyhow!("Unable to get primary key column name"))?
-            .ok_or(anyhow::anyhow!("Unable to cast column name as str"))?;
-
-        let pk_id = json_object
-            .get("id")
-            .map(|v| v.as_i64())
-            .ok_or(anyhow::anyhow!("Unable to get primary key id"))?
-            .ok_or(anyhow::anyhow!("Unable to cast id into i64"))?;
-
-        let query = Query::select()
-            .from(Alias::new(table_name))
-            .expr(Expr::cust_with_values(
-                format!("json_object(?,{})", col.get_column_name()),
-                [col.get_column_name()],
-            ))
-            .and_where(Expr::col(Alias::new(pk_name)).eq(pk_id))
-            .to_string(SqliteQueryBuilder);
-
-        let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
-            .fetch_one(db)
-            .await
-            .map(|(map_val,)| map_val.as_object().unwrap().clone())
-            .map(|val| val.get(&col.get_column_name()).unwrap().clone())
-            .map(Value::from_json)?;
-
-        Ok(Some(result?))
-    })
-}
-
-pub fn column_resolver_ext(
     table_name: String,
     col: sqlparser::ast::ColumnDef,
     ctx: ResolverContext<'_>,
@@ -371,7 +313,7 @@ pub fn column_resolver_ext(
     })
 }
 
-pub fn insert_resolver_ext(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn insert_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing insert resolver for table: {:?}", table.name);
 
@@ -449,7 +391,7 @@ pub fn insert_resolver_ext(table: CreateTable, ctx: ResolverContext<'_>) -> Fiel
     })
 }
 
-pub fn update_resolver_ext(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn update_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing update resolver for table: {:?}", table.name);
 
@@ -531,7 +473,7 @@ pub fn update_resolver_ext(table: CreateTable, ctx: ResolverContext<'_>) -> Fiel
     })
 }
 
-pub fn delete_resolver_ext(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn delete_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing delete resolver for table: {:?}", table.name);
 

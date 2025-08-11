@@ -3,19 +3,8 @@ host = "0.0.0.0"
 port = 8000
 
 [graphql]
-enable-uploading = true
 enable-playground = true
-disable-suggestions = false
-disable-introspection = false
-enable-federation = false
-
 
 [database]
-use-env = true
-database-url = "sqlite::memory:"
-migrations-path = "examples/blog/migrations"
-
-# Advance sqlite configuration. note: if this is used, use-env, database-url will be ignored
-[database.sqlite]
-# Path to the SQLite database file. Use ":memory:" for in-memory database
-filename = "local.db"
+database-url = "sqlite://:memory:"
+migration-path = "./examples/blog/migrations"

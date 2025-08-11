@@ -46,7 +46,7 @@
 //! for input in inputs { schema = schema.register(input); }
 //! ```
 
-use async_graphql::dynamic::{Field, InputObject, InputValue, Object, Scalar, TypeRef};
+use async_graphql::dynamic::{Enum, Field, InputObject, InputValue, Object, Scalar, TypeRef};
 use sea_query::SimpleExpr;
 use sqlparser::ast::DataType;
 
@@ -81,6 +81,10 @@ pub trait ToGraphqlScalarExt {
     /// A `Result` containing the generated `Scalar` on success, or an `async_graphql::Error`
     /// if the conversion fails (e.g., unable to determine the column type).
     fn to_scalar(&self) -> async_graphql::Result<Scalar>;
+}
+
+pub trait ToGraphqlEnumExt {
+    fn to_enum(&self, table_name: &str) -> async_graphql::Result<Enum>;
 }
 
 /// Converts SQLite column definitions to GraphQL input values.
@@ -120,7 +124,11 @@ pub trait ToGraphqlInputValueExt {
     ///
     /// A `Result` containing the generated `InputValue` on success, or an `async_graphql::Error`
     /// if the conversion fails.
-    fn to_input_value(&self, force_nullable: bool) -> async_graphql::Result<InputValue>;
+    fn to_input_value(
+        &self,
+        table_name: &str,
+        force_nullable: bool,
+    ) -> async_graphql::Result<InputValue>;
 }
 
 /// Converts SQLite column definitions to GraphQL field definitions.
@@ -160,7 +168,7 @@ pub trait ToGraphqlFieldExt {
     /// A `Result` containing the generated `Field` with appropriate resolver on success,
     /// or an `async_graphql::Error` if the conversion fails.
 
-    fn to_field_ext(&self, table_name: String) -> async_graphql::Result<Field>;
+    fn to_field(&self, table_name: String) -> async_graphql::Result<Field>;
 }
 
 /// Converts SQLite column definitions to GraphQL type references.
@@ -194,7 +202,7 @@ pub trait ToGraphqlTypeRefExt {
     /// if the conversion fails. The type reference will be non-nullable (`TypeRef::named_nn`)
     /// for columns with NOT NULL constraints and no default values, or nullable (`TypeRef::named`)
     /// otherwise.
-    fn to_type_ref(&self) -> async_graphql::Result<TypeRef>;
+    fn to_type_ref(&self, table_name: &str) -> async_graphql::Result<TypeRef>;
 }
 
 /// Generates GraphQL mutation operations for database tables.
@@ -373,6 +381,7 @@ pub struct GraphQLObjectOutput {
     pub queries: Vec<Object>,
     pub mutations: Vec<Field>,
     pub inputs: Vec<InputObject>,
+    pub enums: Vec<Enum>,
 }
 
 /// Orchestrates the complete GraphQL schema generation for database tables.

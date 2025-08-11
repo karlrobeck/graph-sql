@@ -1,15 +1,19 @@
-use async_graphql::dynamic::{Field, InputObject, InputValue, Object, Scalar, TypeRef};
-use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, TableConstraint};
-use tracing::{debug, warn, instrument};
+use anyhow::anyhow;
+use async_graphql::dynamic::{
+    Enum, EnumItem, Field, InputObject, InputValue, Object, Scalar, TypeRef,
+};
+use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, Expr, TableConstraint};
+use tracing::{debug, instrument, warn};
 
 use crate::{
     resolvers::{
-        column_resolver_ext, delete_resolver_ext, foreign_key_resolver_ext, insert_resolver_ext,
-        list_resolver_ext, update_resolver_ext, view_resolver_ext,
+        column_resolver, delete_resolver, foreign_key_resolver, insert_resolver, list_resolver,
+        update_resolver, view_resolver,
     },
     traits::{
-        GraphQLObjectOutput, ToGraphqlFieldExt, ToGraphqlInputValueExt, ToGraphqlMutations,
-        ToGraphqlNode, ToGraphqlObject, ToGraphqlQueries, ToGraphqlScalarExt, ToGraphqlTypeRefExt,
+        GraphQLObjectOutput, ToGraphqlEnumExt, ToGraphqlFieldExt, ToGraphqlInputValueExt,
+        ToGraphqlMutations, ToGraphqlNode, ToGraphqlObject, ToGraphqlQueries, ToGraphqlScalarExt,
+        ToGraphqlTypeRefExt,
     },
     utils::{find_primary_key_column, strip_id_suffix},
 };
@@ -114,27 +118,68 @@ impl ToGraphqlScalarExt for ColumnDef {
     }
 }
 
+impl ToGraphqlEnumExt for ColumnDef {
+    fn to_enum(&self, table_name: &str) -> async_graphql::Result<Enum> {
+        let mut graphql_enum = if self.data_type.to_string().starts_with("enum_") {
+            Enum::new(format!("{}_{}_enum", table_name, self.name))
+        } else {
+            return Err(async_graphql::Error::new("Cannot convert into enum"));
+        };
+
+        // get the check constraint
+        for option in self.options.iter() {
+            let check_expr_items = match &option.option {
+                ColumnOption::Check(expr) => match expr {
+                    Expr::InList {
+                        expr: _,
+                        list,
+                        negated,
+                    } => {
+                        if !negated {
+                            list
+                        } else {
+                            return Err(async_graphql::Error::new("Cannot convert into enum"));
+                        }
+                    }
+                    _ => return Err(async_graphql::Error::new("Cannot convert into enum")),
+                },
+                _ => continue,
+            };
+
+            graphql_enum = graphql_enum.items(
+                check_expr_items
+                    .iter()
+                    .map(|expr| EnumItem::new(expr.to_string().replace("'", ""))),
+            );
+        }
+
+        Ok(graphql_enum)
+    }
+}
+
 impl ToGraphqlTypeRefExt for ColumnDef {
-    fn to_type_ref(&self) -> async_graphql::Result<TypeRef> {
-        let scalar = self.to_scalar()?;
+    fn to_type_ref(&self, table_name: &str) -> async_graphql::Result<TypeRef> {
+        let graphql_type = if self.data_type.to_string().starts_with("enum_") {
+            let enum_value = self.to_enum(table_name)?;
+            enum_value.type_name().to_owned()
+        } else {
+            self.to_scalar()?.type_name().to_owned()
+        };
 
         if self
             .options
             .iter()
             .any(|spec| matches!(spec.option, ColumnOption::NotNull))
         {
-            Ok(TypeRef::named_nn(scalar.type_name()))
+            Ok(TypeRef::named_nn(graphql_type))
         } else {
-            Ok(TypeRef::named(scalar.type_name()))
+            Ok(TypeRef::named(graphql_type))
         }
     }
 }
 
 impl ToGraphqlFieldExt for ColumnDef {
-    fn to_field_ext(
-        &self,
-        table_name: String,
-    ) -> async_graphql::Result<async_graphql::dynamic::Field> {
+    fn to_field(&self, table_name: String) -> async_graphql::Result<async_graphql::dynamic::Field> {
         let name = self.name.to_string();
         let column_def = self.clone();
 
@@ -169,7 +214,7 @@ impl ToGraphqlFieldExt for ColumnDef {
                         let column_def = column_def.clone();
                         let table_name = table_name.clone();
                         move |ctx| {
-                            foreign_key_resolver_ext(
+                            foreign_key_resolver(
                                 table_name.clone(),
                                 foreign_table.clone(),
                                 referred_column.clone(),
@@ -187,18 +232,26 @@ impl ToGraphqlFieldExt for ColumnDef {
             }
         }
 
-        Ok(Field::new(&name, self.to_type_ref()?, move |ctx| {
-            column_resolver_ext(table_name.clone(), column_def.clone(), ctx)
-        }))
+        Ok(Field::new(
+            &name,
+            self.to_type_ref(&table_name)?,
+            move |ctx| column_resolver(table_name.clone(), column_def.clone(), ctx),
+        ))
     }
 }
 
 impl ToGraphqlInputValueExt for ColumnDef {
     fn to_input_value(
         &self,
+        table_name: &str,
         force_nullable: bool,
     ) -> async_graphql::Result<async_graphql::dynamic::InputValue> {
-        let scalar = self.to_scalar()?;
+        let graphql_type = if self.data_type.to_string().starts_with("enum_") {
+            let enum_value = self.to_enum(table_name)?;
+            enum_value.type_name().to_owned()
+        } else {
+            self.to_scalar()?.type_name().to_owned()
+        };
 
         let mut specs = self.options.iter();
 
@@ -209,19 +262,19 @@ impl ToGraphqlInputValueExt for ColumnDef {
         if force_nullable {
             return Ok(InputValue::new(
                 self.name.to_string(),
-                TypeRef::named(scalar.type_name()),
+                TypeRef::named(graphql_type),
             ));
         }
 
         if is_not_null && !has_default_val {
             Ok(InputValue::new(
                 self.name.to_string(),
-                TypeRef::named_nn(scalar.type_name()),
+                TypeRef::named_nn(graphql_type),
             ))
         } else {
             Ok(InputValue::new(
                 self.name.to_string(),
-                TypeRef::named(scalar.type_name()),
+                TypeRef::named(graphql_type),
             ))
         }
     }
@@ -279,7 +332,7 @@ impl ToGraphqlNode for CreateTable {
                                 let column_def = column_def.clone();
                                 let table_name = self.name.to_string();
                                 move |ctx| {
-                                    foreign_key_resolver_ext(
+                                    foreign_key_resolver(
                                         table_name.clone(),
                                         foreign_table.clone(),
                                         referred_column.clone(),
@@ -309,7 +362,7 @@ impl ToGraphqlNode for CreateTable {
         // Add regular column fields (excluding those already added as foreign key fields)
         for col in self.columns.iter() {
             if !foreign_columns.contains(col) {
-                let field = col.to_field_ext(name.clone())?;
+                let field = col.to_field(name.clone())?;
                 debug!("Adding field '{}'", col.name);
                 table_node = table_node.field(field);
             }
@@ -338,7 +391,7 @@ impl ToGraphqlQueries for CreateTable {
         let list_field = Field::new(
             "list",
             TypeRef::named_list(format!("{}_node", table_name)),
-            move |ctx| list_resolver_ext(table.clone(), ctx),
+            move |ctx| list_resolver(table.clone(), ctx),
         )
         .argument(InputValue::new(
             "input",
@@ -359,7 +412,7 @@ impl ToGraphqlQueries for CreateTable {
         let view_query = Field::new(
             "view",
             TypeRef::named(format!("{}_node", table_name)),
-            move |ctx| view_resolver_ext(table.clone(), ctx),
+            move |ctx| view_resolver(table.clone(), ctx),
         )
         .argument(InputValue::new(
             "input",
@@ -380,7 +433,7 @@ impl ToGraphqlMutations for CreateTable {
         let table_name = self.name.to_string();
 
         for col in self.columns.iter() {
-            input = input.field(col.to_input_value(false)?);
+            input = input.field(col.to_input_value(&self.name.to_string(), false)?);
         }
 
         let table_clone = self.clone();
@@ -388,7 +441,7 @@ impl ToGraphqlMutations for CreateTable {
         let insert_mutation_field = Field::new(
             format!("insert_{}", table_name),
             TypeRef::named_nn(format!("{}_node", table_name)),
-            move |ctx| insert_resolver_ext(table_clone.clone(), ctx),
+            move |ctx| insert_resolver(table_clone.clone(), ctx),
         )
         .argument(InputValue::new(
             "input",
@@ -409,7 +462,7 @@ impl ToGraphqlMutations for CreateTable {
         let pk_input = InputValue::new("id", TypeRef::named_nn(pk_col.to_scalar()?.type_name()));
 
         for col in self.columns.iter() {
-            input = input.field(col.to_input_value(true)?);
+            input = input.field(col.to_input_value(&self.name.to_string(), true)?);
         }
 
         let table_clone = self.clone();
@@ -417,7 +470,7 @@ impl ToGraphqlMutations for CreateTable {
         let update_mutation_field = Field::new(
             format!("update_{}", table_name),
             TypeRef::named_nn(format!("{}_node", table_name)),
-            move |ctx| update_resolver_ext(table_clone.clone(), ctx),
+            move |ctx| update_resolver(table_clone.clone(), ctx),
         )
         .argument(pk_input)
         .argument(InputValue::new(
@@ -442,7 +495,7 @@ impl ToGraphqlMutations for CreateTable {
         let delete_mutation_field = Field::new(
             format!("delete_{}", table_name),
             TypeRef::named_nn(TypeRef::BOOLEAN),
-            move |ctx| delete_resolver_ext(table_clone.clone(), ctx),
+            move |ctx| delete_resolver(table_clone.clone(), ctx),
         )
         .argument(InputValue::new(
             "input",
@@ -461,6 +514,11 @@ impl ToGraphqlObject for CreateTable {
         let mut inputs = vec![];
         let mut mutations = vec![];
         let mut queries = vec![];
+        let enums = self
+            .columns
+            .iter()
+            .filter_map(|col| col.to_enum(&self.name.to_string()).ok())
+            .collect::<Vec<_>>();
 
         let table_node = self.to_node()?;
         let table_name = self.name.to_string();
@@ -475,7 +533,7 @@ impl ToGraphqlObject for CreateTable {
         let view_query = self.to_view_query()?;
 
         queries.push(
-            Object::new(table_name.to_string())
+            Object::new(table_name.clone())
                 .field(list_query.1)
                 .field(view_query.1),
         );
@@ -503,6 +561,7 @@ impl ToGraphqlObject for CreateTable {
             queries,
             mutations,
             inputs,
+            enums,
         })
     }
 }

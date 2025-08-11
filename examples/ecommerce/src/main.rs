@@ -11,7 +11,7 @@ async fn main() -> async_graphql::Result<()> {
     let db = config.database.create_connection().await?;
 
     println!("📊 Running database migrations...");
-    sqlx::migrate!("./examples/ecommerce/migrations")
+    sqlx::migrate!("examples/ecommerce/migrations")
         .run(&db)
         .await
         .map_err(|e| anyhow::anyhow!("Migration failed: {}", e))?;
