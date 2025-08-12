@@ -33,7 +33,7 @@
 
 use async_graphql::dynamic::{Enum, Field, InputObject, InputValue, Object, Scalar, TypeRef};
 use sea_query::SimpleExpr;
-use sqlparser::ast::DataType;
+use sqlparser::ast::{BinaryOperator, DataType};
 
 /// Converts SQLite column definitions to GraphQL scalar types.
 ///
@@ -104,6 +104,8 @@ pub trait ToGraphqlInputValueExt {
         table_name: &str,
         force_nullable: bool,
     ) -> async_graphql::Result<InputValue>;
+
+    fn to_filter_condition(&self) -> async_graphql::Result<InputValue>;
 }
 
 /// Converts SQLite column definitions to GraphQL field definitions.

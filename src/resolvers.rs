@@ -15,6 +15,20 @@ use crate::{
     traits::ToSimpleExpr,
 };
 
+pub enum FilterOperator {
+    Eq,
+    Gte,
+    Gt,
+    Lte,
+    Lt,
+    Ne,
+}
+
+pub struct DynamicFilterCondition {
+    field: String,
+    op: FilterOperator,
+}
+
 pub fn list_resolver(table_info: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing list resolver for table: {:?}", table_info.name);

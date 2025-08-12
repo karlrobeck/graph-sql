@@ -16,7 +16,9 @@ use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
-use crate::{config::GraphSQLConfig, loader::ColumnRowLoader, traits::ToGraphqlObject};
+use crate::{
+    config::GraphSQLConfig, loader::ColumnRowLoader, traits::ToGraphqlObject, utils::StringFilter,
+};
 
 pub mod config;
 pub mod loader;
@@ -126,6 +128,9 @@ impl GraphSQL {
             inputs.extend(graphql.inputs);
             enums.extend(graphql.enums);
         }
+
+        // register filter operators
+        inputs.push(StringFilter::to_object());
 
         info!(
             "Building GraphQL schema with {} objects and {} inputs",

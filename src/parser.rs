@@ -277,6 +277,19 @@ impl ToGraphqlInputValueExt for ColumnDef {
             ))
         }
     }
+
+    fn to_filter_condition(&self) -> async_graphql::Result<InputValue> {
+        match self.to_scalar()?.type_name() {
+            TypeRef::STRING => Ok(InputValue::new(
+                self.name.to_string(),
+                TypeRef::named("string_filter"),
+            )),
+            _ => Ok(InputValue::new(
+                self.name.to_string(),
+                TypeRef::named("string_filter"),
+            )),
+        }
+    }
 }
 
 impl ToGraphqlNode for CreateTable {
@@ -383,7 +396,11 @@ impl ToGraphqlQueries for CreateTable {
 
         let input = InputObject::new(format!("list_{}_input", table_name))
             .field(InputValue::new("page", TypeRef::named_nn(TypeRef::INT)))
-            .field(InputValue::new("limit", TypeRef::named_nn(TypeRef::INT)));
+            .field(InputValue::new("limit", TypeRef::named_nn(TypeRef::INT)))
+            .field(InputValue::new(
+                "where",
+                TypeRef::named(format!("{}_filter_logic", self.name.to_string())),
+            ));
 
         let table = self.clone();
 
@@ -527,6 +544,39 @@ impl ToGraphqlObject for CreateTable {
         let update_mutation = self.to_update_mutation()?;
         let delete_mutation = self.to_delete_mutation()?;
 
+        let filters = self
+            .columns
+            .iter()
+            .filter_map(|col| col.to_filter_condition().ok())
+            .collect::<Vec<_>>();
+
+        let mut filter_condition_input =
+            InputObject::new(format!("{}_filter_condition", self.name.to_string()));
+
+        for filter in filters {
+            filter_condition_input = filter_condition_input.field(filter);
+        }
+
+        let filter_logic_input_name = format!("{}_filter_logic", self.name.to_string());
+
+        let filter_logic_input = InputObject::new(filter_logic_input_name.clone())
+            .field(InputValue::new(
+                "and",
+                TypeRef::named_list(filter_logic_input_name.clone()),
+            ))
+            .field(InputValue::new(
+                "or",
+                TypeRef::named_list(filter_logic_input_name.clone()),
+            ))
+            .field(InputValue::new(
+                "not",
+                TypeRef::named_list(filter_logic_input_name.clone()),
+            ))
+            .field(InputValue::new(
+                "condition",
+                TypeRef::named(filter_condition_input.type_name()),
+            ));
+
         debug!("Generating queries for table '{}'", table_name);
         let list_query = self.to_list_query()?;
         let view_query = self.to_view_query()?;
@@ -546,6 +596,10 @@ impl ToGraphqlObject for CreateTable {
         inputs.push(delete_mutation.0);
         inputs.push(list_query.0);
         inputs.push(view_query.0);
+
+        // filters
+        inputs.push(filter_logic_input);
+        inputs.push(filter_condition_input);
 
         debug!(
             "Generated GraphQL object for table '{}': {} queries, {} mutations, {} inputs",

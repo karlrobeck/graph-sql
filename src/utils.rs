@@ -5,7 +5,7 @@
 //! primary key identification.
 
 use anyhow::anyhow;
-use async_graphql::dynamic::ValueAccessor;
+use async_graphql::dynamic::{InputObject, InputValue, TypeRef, ValueAccessor};
 use sea_query::SimpleExpr;
 use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, TableConstraint};
 use tracing::{debug, instrument, warn};
@@ -228,6 +228,23 @@ impl ToSimpleExpr for ValueAccessor<'_> {
             }
             _ => panic!("Unsupported data type"),
         }
+    }
+}
+
+pub struct StringFilter {
+    pub eq: Option<String>,
+    pub ne: Option<String>,
+    pub contains: Option<String>,
+    pub r#in: Option<String>,
+}
+
+impl StringFilter {
+    pub fn to_object() -> InputObject {
+        InputObject::new("string_filter")
+            .field(InputValue::new("eq", TypeRef::named(TypeRef::STRING)))
+            .field(InputValue::new("ne", TypeRef::named(TypeRef::STRING)))
+            .field(InputValue::new("contains", TypeRef::named(TypeRef::STRING)))
+            .field(InputValue::new("in", TypeRef::named(TypeRef::STRING)))
     }
 }
 
