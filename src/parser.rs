@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use async_graphql::dynamic::{
     Enum, EnumItem, Field, InputObject, InputValue, Object, Scalar, TypeRef,
 };
@@ -17,6 +18,123 @@ use crate::{
     utils::{find_primary_key_column, strip_id_suffix},
 };
 
+pub struct TableDef {
+    name: String,                //  name of the table
+    columns: Vec<ColDef>,        // column definitions
+    description: Option<String>, // table description
+}
+
+pub struct ColDef {
+    table_name: String,          // name of the table that it belongs to
+    name: String,                // name of the column
+    data_type: ColDataType,      // data type of the column
+    not_null: bool,              // has not null constraint
+    is_primary: bool,            // is primary key
+    description: Option<String>, // column description / comment
+    relationship: Option<ForeignColDef>,
+}
+
+pub struct ForeignColDef {
+    table: String, // The name of the parent table referenced by the foreign key.
+    from: String,  // The name of the column in the child table (the table you're querying).
+    to: String,    // The name of the column in the parent table that is referenced.
+}
+
+pub enum ColDataType {
+    String,
+    Integer,
+    Float,
+    Boolean,
+}
+
+impl TryFrom<String> for ColDataType {
+    type Error = anyhow::Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "text" => Ok(Self::String),
+            "integer" => Ok(Self::Integer),
+            "float" => Ok(Self::Float),
+            "boolean" => Ok(Self::Boolean),
+            _ => Err(anyhow!("Unsupported DataType")),
+        }
+    }
+}
+
+impl From<ColDataType> for async_graphql::dynamic::Scalar {
+    fn from(value: ColDataType) -> Self {
+        match value {
+            ColDataType::String => Scalar::new(TypeRef::STRING),
+            ColDataType::Integer => Scalar::new(TypeRef::INT),
+            ColDataType::Float => Scalar::new(TypeRef::FLOAT),
+            ColDataType::Boolean => Scalar::new(TypeRef::BOOLEAN),
+        }
+    }
+}
+
+impl From<ColDef> for async_graphql::dynamic::TypeRef {
+    fn from(value: ColDef) -> Self {
+        let graphql_type = Scalar::from(value.data_type);
+
+        if value.not_null {
+            TypeRef::named_nn(graphql_type.type_name())
+        } else {
+            TypeRef::named(graphql_type.type_name())
+        }
+    }
+}
+
+impl From<ColDef> for async_graphql::dynamic::Field {
+    fn from(value: ColDef) -> Self {
+        if let Some(rel) = value.relationship {
+            todo!("return foreign key resolver")
+        }
+
+        Field::new(value.name.clone(), TypeRef::from(value), move |_| {
+            todo!("implement proper column resolver here")
+        })
+    }
+}
+
+impl From<ColDef>
+    for (
+        async_graphql::dynamic::InputValue, // insert input value
+        async_graphql::dynamic::InputValue, // update input value
+    )
+{
+    fn from(value: ColDef) -> Self {
+        let graphql_type = Scalar::from(value.data_type);
+
+        let type_ref = if value.not_null {
+            TypeRef::named_nn(graphql_type.type_name())
+        } else {
+            TypeRef::named(graphql_type.type_name())
+        };
+
+        (
+            InputValue::new(value.name.to_string(), type_ref),
+            InputValue::new(
+                value.name.to_string(),
+                TypeRef::named(graphql_type.type_name()),
+            ),
+        )
+    }
+}
+
+impl From<TableDef> for async_graphql::dynamic::Object {
+    fn from(value: TableDef) -> Self {
+        let mut table_node = Object::new(format!("{}_node", value.name));
+
+        for col in value.columns {
+            table_node = table_node.field(Field::from(col));
+        }
+
+        table_node
+    }
+}
+
+// old code
+
+// done
 impl ToGraphqlScalarExt for ColumnDef {
     fn to_scalar(&self) -> async_graphql::Result<async_graphql::dynamic::Scalar> {
         let scalar = match &self.data_type {
@@ -117,6 +235,7 @@ impl ToGraphqlScalarExt for ColumnDef {
     }
 }
 
+// to next version
 impl ToGraphqlEnumExt for ColumnDef {
     fn to_enum(&self, table_name: &str) -> async_graphql::Result<Enum> {
         let mut graphql_enum = if self.data_type.to_string().starts_with("enum_text") {
@@ -156,6 +275,7 @@ impl ToGraphqlEnumExt for ColumnDef {
     }
 }
 
+// done
 impl ToGraphqlTypeRefExt for ColumnDef {
     fn to_type_ref(&self, table_name: &str) -> async_graphql::Result<TypeRef> {
         let graphql_type = if self.data_type.to_string().starts_with("enum_text") {
@@ -177,6 +297,7 @@ impl ToGraphqlTypeRefExt for ColumnDef {
     }
 }
 
+// done
 impl ToGraphqlFieldExt for ColumnDef {
     fn to_field(&self, table_name: String) -> async_graphql::Result<async_graphql::dynamic::Field> {
         let name = self.name.to_string();
