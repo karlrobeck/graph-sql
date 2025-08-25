@@ -18,12 +18,14 @@ use crate::{
     utils::{find_primary_key_column, strip_id_suffix},
 };
 
+#[derive(Clone)]
 pub struct TableDef {
-    name: String,                //  name of the table
+    name: String,                // name of the table
     columns: Vec<ColDef>,        // column definitions
     description: Option<String>, // table description
 }
 
+#[derive(Clone)]
 pub struct ColDef {
     table_name: String,          // name of the table that it belongs to
     name: String,                // name of the column
@@ -34,12 +36,14 @@ pub struct ColDef {
     relationship: Option<ForeignColDef>,
 }
 
+#[derive(Clone)]
 pub struct ForeignColDef {
     table: String, // The name of the parent table referenced by the foreign key.
     from: String,  // The name of the column in the child table (the table you're querying).
     to: String,    // The name of the column in the parent table that is referenced.
 }
 
+#[derive(Clone)]
 pub enum ColDataType {
     String,
     Integer,
@@ -108,9 +112,12 @@ impl From<ColDef> for async_graphql::dynamic::Field {
             todo!("return foreign key resolver")
         }
 
-        Field::new(value.name.clone(), TypeRef::from(value), move |_| {
-            todo!("implement proper column resolver here")
-        })
+        Field::new(
+            value.name.clone(),
+            TypeRef::from(value.clone()),
+            move |_| todo!("implement proper column resolver here"),
+        )
+        .description(value.description.unwrap_or_default())
     }
 }
 
@@ -147,7 +154,7 @@ impl From<TableDef> for async_graphql::dynamic::Object {
             table_node = table_node.field(Field::from(col));
         }
 
-        table_node
+        table_node.description(value.description.unwrap_or_default())
     }
 }
 
