@@ -47,6 +47,25 @@ pub enum ColDataType {
     Boolean,
 }
 
+pub struct ListQuery(async_graphql::dynamic::Object);
+
+pub struct ViewQuery(async_graphql::dynamic::Object);
+
+pub struct InsertMutation(
+    async_graphql::dynamic::Object,
+    Vec<async_graphql::dynamic::InputObject>,
+);
+
+pub struct UpdateMutation(
+    async_graphql::dynamic::Object,
+    Vec<async_graphql::dynamic::InputObject>,
+);
+
+pub struct DeleteMutation(
+    async_graphql::dynamic::Object,
+    Vec<async_graphql::dynamic::InputObject>,
+);
+
 impl TryFrom<String> for ColDataType {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -360,6 +379,7 @@ impl ToGraphqlFieldExt for ColumnDef {
     }
 }
 
+// done
 impl ToGraphqlInputValueExt for ColumnDef {
     fn to_input_value(
         &self,
@@ -413,6 +433,7 @@ impl ToGraphqlInputValueExt for ColumnDef {
     }
 }
 
+// done
 impl ToGraphqlNode for CreateTable {
     #[instrument(skip(self), fields(table_name = %self.name), level = "debug")]
     fn to_node(&self) -> async_graphql::Result<async_graphql::dynamic::Object> {
