@@ -281,7 +281,7 @@ pub trait ToGraphqlNode {
 /// - `enums`: Enum type definitions for CHECK constraint columns
 pub struct GraphQLObjectOutput {
     pub table: Object,
-    pub queries: Vec<Object>,
+    pub queries: Vec<Field>,
     pub mutations: Vec<Field>,
     pub inputs: Vec<InputObject>,
     pub enums: Vec<Enum>,

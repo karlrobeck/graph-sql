@@ -17,7 +17,11 @@ use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
 use crate::{
-    config::GraphSQLConfig, loader::ColumnRowLoader, traits::ToGraphqlObject, utils::StringFilter,
+    config::GraphSQLConfig,
+    loader::ColumnRowLoader,
+    parser::{Introspector, TableDef},
+    traits::{GraphQLObjectOutput, ToGraphqlObject},
+    utils::StringFilter,
 };
 
 pub mod config;
@@ -36,55 +40,13 @@ impl GraphSQL {
         Self { config }
     }
 
-    pub async fn introspect(&self, db: &SqlitePool) -> async_graphql::Result<Vec<CreateTable>> {
+    pub async fn introspect(&self, db: &SqlitePool) -> async_graphql::Result<Vec<TableDef>> {
         info!("Starting database introspection");
 
-        let mut sql = Query::select();
-
-        let mut sql = sql
-            .from(Alias::new("sqlite_master"))
-            .column(Alias::new("sql"))
-            .and_where(Expr::col(Alias::new("type")).eq("table"));
-
-        // TODO: implement include and exclude table based on config
-        sql = sql.and_where(Expr::col("name").is_not_in(["_sqlx_migrations", "sqlite_sequence"]));
-
-        let tables = sqlx::query_as::<_, (String,)>(&sql.to_string(SqliteQueryBuilder))
-            .fetch_all(db)
-            .await?;
-
-        debug!("Found {} tables in database", tables.len());
-
-        if tables.is_empty() {
-            warn!("No tables found in database");
-            return Err(async_graphql::Error::new("No tables found in database"));
-        }
-
-        let sqlite_dialect = SQLiteDialect {};
-
-        debug!("Parsing SQL statements with SQLite dialect");
-
-        let tables = tables
-            .into_iter()
-            .flat_map(|(sql,)| {
-                debug!("Parsing SQL: {}", sql);
-                Parser::parse_sql(&sqlite_dialect, &sql).unwrap()
-            })
-            .filter_map(|statement| {
-                if let Statement::CreateTable(table) = statement {
-                    debug!("Found CREATE TABLE statement for: {}", table.name);
-                    Some(table)
-                } else {
-                    debug!("Skipping non-CREATE TABLE statement");
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        Ok(tables)
+        Ok(TableDef::introspect(db).await?)
     }
 
-    pub fn build_schema(&self, tables: Vec<CreateTable>) -> async_graphql::Result<SchemaBuilder> {
+    pub fn build_schema(&self, tables: Vec<TableDef>) -> async_graphql::Result<SchemaBuilder> {
         let mut query_object = Object::new("Query");
         let mut mutation_object = Object::new("Mutation");
 
@@ -99,22 +61,11 @@ impl GraphSQL {
 
             debug!("Converting table '{:?}' to GraphQL object", name);
 
-            let graphql = table.to_object()?;
+            let graphql = GraphQLObjectOutput::from(table);
 
             // add query
-            for query in graphql.queries {
-                debug!(
-                    "Adding query field '{}' for table: {}",
-                    query.type_name(),
-                    name
-                );
-                query_object = query_object.field(Field::new(
-                    name.to_string(),
-                    TypeRef::named_nn(query.type_name()),
-                    |_| FieldFuture::new(async move { Ok(Some(Value::Null)) }),
-                ));
-
-                table_objects.push(query);
+            for query_field in graphql.queries {
+                query_object = query_object.field(query_field);
             }
 
             // add mutations
@@ -164,7 +115,13 @@ impl GraphSQL {
     }
 
     pub async fn build(&self, db: &SqlitePool) -> async_graphql::Result<(Router, TcpListener)> {
-        let tables = self.introspect(db).await?;
+        let mut tables = self.introspect(db).await?;
+
+        // remove private tables
+        tables = tables
+            .into_iter()
+            .filter(|table| table.name == "_sqlx_migrations")
+            .collect::<Vec<_>>();
 
         let schema = self.build_schema(tables)?;
 
