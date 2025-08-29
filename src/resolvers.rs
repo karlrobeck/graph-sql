@@ -6,14 +6,34 @@ use async_graphql::{
 };
 use base64::{Engine as _, engine::general_purpose};
 use sea_query::{Alias, Expr, Query, SqliteQueryBuilder};
+use serde::Serialize;
 use sqlparser::ast::{ColumnOption, CreateTable};
 use sqlx::SqlitePool;
 use tracing::debug;
 
 use crate::{
     loader::{ColumnRowDef, ColumnRowLoader},
+    parser::{ColDef, TableDef},
     traits::ToSimpleExpr,
 };
+
+#[derive(Clone, Serialize)]
+pub struct ColumnResolverArgs {
+    name: String,
+    id: serde_json::Value,
+}
+
+impl From<ColumnResolverArgs> for async_graphql::Value {
+    fn from(value: ColumnResolverArgs) -> Self {
+        let mut map = async_graphql::indexmap::IndexMap::new();
+        map.insert(async_graphql::Name::new("name"), Value::String(value.name));
+        map.insert(
+            async_graphql::Name::new("id"),
+            Value::from_json(value.id).unwrap(),
+        );
+        Value::Object(map)
+    }
+}
 
 pub enum FilterOperator {
     Eq,
@@ -27,6 +47,81 @@ pub enum FilterOperator {
 pub struct DynamicFilterCondition {
     field: String,
     op: FilterOperator,
+}
+
+pub fn list_resolver_gen(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+    FieldFuture::new(async move {
+        let db = ctx.data::<SqlitePool>()?;
+
+        let table_name = table.name;
+
+        let pk_col = table
+            .columns
+            .iter()
+            .find(|col| col.is_primary)
+            .ok_or(anyhow!("Unable to find primary key"))?;
+
+        let page = ctx.args.try_get("page")?.u64()?;
+        let per_page = ctx.args.try_get("perPage")?.u64()?;
+
+        let query = Query::select()
+            .from(Alias::new(table_name))
+            .expr(Expr::cust(format!("json_object('id',{})", pk_col.name)))
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .to_string(SqliteQueryBuilder);
+
+        let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
+            .fetch_all(db)
+            .await
+            .map_err(|e| {
+                debug!("Database query failed: {}", e);
+                e
+            })?
+            .into_iter()
+            .map(|(val,)| ColumnResolverArgs {
+                name: pk_col.name.clone(),
+                id: val.get("id").unwrap().clone(),
+            })
+            .map(async_graphql::Value::from)
+            .collect::<Vec<_>>();
+
+        Ok(Some(Value::List(result)))
+    })
+}
+
+pub fn column_resolver_gen(column: ColDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+    FieldFuture::new(async move {
+        let loader = ctx.data::<DataLoader<ColumnRowLoader>>()?;
+
+        let parent_value = ctx.parent_value.try_to_value()?;
+
+        let parent_value = parent_value.clone().into_json()?;
+
+        let name = parent_value
+            .get("name")
+            .ok_or(anyhow!("Unable to get column name"))?
+            .as_str()
+            .ok_or(anyhow!("Unable to convert column to string"))?;
+
+        let id_val = parent_value
+            .get("id")
+            .ok_or(anyhow!("Unable to get column id value"))?;
+
+        let result = loader
+            .load_one(ColumnRowDef {
+                table: Alias::new(column.table_name),
+                column: Alias::new(column.name),
+                value: id_val.clone(),
+                primary_column: Alias::new(name),
+            })
+            .await?
+            .ok_or(anyhow!("Unable to get row"))?;
+
+        debug!("{:#?}", result);
+
+        Ok(Some(Value::from_json(result)?))
+    })
 }
 
 pub fn list_resolver(table_info: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
@@ -227,103 +322,6 @@ pub fn foreign_key_resolver(
             .map(Value::from_json)?;
 
         Ok(Some(result?))
-    })
-}
-
-pub fn column_resolver(
-    table_name: String,
-    col: sqlparser::ast::ColumnDef,
-    ctx: ResolverContext<'_>,
-) -> FieldFuture<'_> {
-    FieldFuture::new(async move {
-        debug!(
-            "Executing column resolver for table: {} column: {}",
-            table_name,
-            col.name.to_string()
-        );
-
-        let loader = ctx.data::<DataLoader<ColumnRowLoader>>()?;
-
-        let parent_value = ctx
-            .parent_value
-            .as_value()
-            .ok_or(anyhow::anyhow!("Unable to get parent value"))?
-            .clone();
-
-        let parent_value = parent_value.into_json()?;
-
-        let json_object = parent_value
-            .as_object()
-            .ok_or(anyhow::anyhow!("Unable to get json object"))?;
-
-        let pk_name = json_object
-            .get("name")
-            .map(|val| val.as_str())
-            .ok_or(anyhow::anyhow!("Unable to get primary key column name"))?
-            .ok_or(anyhow::anyhow!("Unable to cast column name as str"))?;
-
-        let pk_id = json_object
-            .get("id")
-            .map(|v| v.as_i64())
-            .ok_or(anyhow::anyhow!("Unable to get primary key id"))?
-            .ok_or(anyhow::anyhow!("Unable to cast id into i64"))?;
-
-        let result = loader
-            .load_one(ColumnRowDef {
-                column: Alias::new(col.name.to_string()),
-                primary_column: Alias::new(pk_name),
-                table: Alias::new(table_name),
-                value: pk_id,
-            })
-            .await?
-            .map(|val| {
-                // Try to convert Vec<u8> to string first (for text/numeric data)
-                // If that fails, fall back to base64 (for binary data)
-                match String::from_utf8(val.clone()) {
-                    Ok(string_val) => {
-                        // Successfully converted to string, try to parse as JSON value
-                        // First try to parse as number (integer or float)
-                        if let Ok(int_val) = string_val.parse::<i64>() {
-                            Value::from_json(serde_json::Value::Number(serde_json::Number::from(
-                                int_val,
-                            )))
-                            .map_err(|e| {
-                                anyhow!("Unable to convert integer to GraphQL value: {}", e)
-                            })
-                        } else if let Ok(float_val) = string_val.parse::<f64>() {
-                            if let Some(num) = serde_json::Number::from_f64(float_val) {
-                                Value::from_json(serde_json::Value::Number(num)).map_err(|e| {
-                                    anyhow!("Unable to convert float to GraphQL value: {}", e)
-                                })
-                            } else {
-                                Value::from_json(serde_json::Value::String(string_val)).map_err(
-                                    |e| anyhow!("Unable to convert string to GraphQL value: {}", e),
-                                )
-                            }
-                        } else if let Ok(bool_val) = string_val.parse::<bool>() {
-                            Value::from_json(serde_json::Value::Bool(bool_val)).map_err(|e| {
-                                anyhow!("Unable to convert boolean to GraphQL value: {}", e)
-                            })
-                        } else {
-                            // Just use as string
-                            Value::from_json(serde_json::Value::String(string_val)).map_err(|e| {
-                                anyhow!("Unable to convert string to GraphQL value: {}", e)
-                            })
-                        }
-                    }
-                    Err(_) => {
-                        // Not valid UTF-8, likely binary data - encode as base64
-                        let base64_string = general_purpose::STANDARD.encode(&val);
-                        Value::from_json(serde_json::Value::String(base64_string)).map_err(|e| {
-                            anyhow!("Unable to convert base64 string to GraphQL value: {}", e)
-                        })
-                    }
-                }
-            })
-            .transpose()?
-            .ok_or(anyhow!("No value found for column"))?;
-
-        Ok(Some(result))
     })
 }
 

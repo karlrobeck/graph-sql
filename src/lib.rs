@@ -120,7 +120,7 @@ impl GraphSQL {
         // remove private tables
         tables = tables
             .into_iter()
-            .filter(|table| table.name == "_sqlx_migrations")
+            .filter(|table| table.name != "_sqlx_migrations")
             .collect::<Vec<_>>();
 
         let schema = self.build_schema(tables)?;

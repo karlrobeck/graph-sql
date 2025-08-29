@@ -26,7 +26,11 @@ async-graphql-axum = "7.0.17"
 axum = { version = "0.8.4", features = ["macros"] }
 base64 = "0.22.1"
 clap = { version = "4.5.42", features = ["derive", "env"] }
-sea-query = { version = "0.32.6", features = ["thread-safe", "backend-sqlite"] }
+sea-query = { version = "0.32.6", features = [
+  "thread-safe",
+  "backend-sqlite",
+  "with-json",
+] }
 serde = { version = "1.0.216", features = ["derive"] }
 serde_json = "1.0.141"
 toml = "0.8.19"
