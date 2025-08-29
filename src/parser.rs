@@ -8,8 +8,8 @@ use tracing::{debug, instrument, warn};
 
 use crate::{
     resolvers::{
-        column_resolver_gen, delete_resolver, foreign_key_resolver, insert_resolver, list_resolver,
-        list_resolver_gen, update_resolver, view_resolver,
+        column_resolver_gen, delete_resolver, foreign_key_resolver, insert_resolver,
+        list_resolver_gen, update_resolver, view_resolver_gen,
     },
     traits::{
         GraphQLObjectOutput, ToGraphqlEnumExt, ToGraphqlFieldExt, ToGraphqlInputValueExt,
@@ -187,6 +187,8 @@ impl From<TableDef> for ListQuery {
 
 impl From<TableDef> for ViewQuery {
     fn from(value: TableDef) -> Self {
+        let description = value.clone().description.unwrap_or_default();
+
         let pk_col = value
             .columns
             .iter()
@@ -197,14 +199,14 @@ impl From<TableDef> for ViewQuery {
         let field = Field::new(
             pluralizer::pluralize(&value.name.clone(), 1, false), // todo: make this plural properly
             TypeRef::named(format!("{}_node", value.name)),
-            move |_| todo!("Implement proper list query"),
+            move |ctx| view_resolver_gen(value.clone(), ctx),
         )
         .argument(InputValue::new(
             pk_col.name,
             TypeRef::named_nn(Scalar::from(pk_col.data_type).type_name()),
         ));
 
-        ViewQuery(field.description(value.description.unwrap_or_default()))
+        ViewQuery(field.description(description))
     }
 }
 

@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose};
 use sea_query::{Alias, Expr, Query, SqliteQueryBuilder};
 use serde::Serialize;
 use sqlparser::ast::{ColumnOption, CreateTable};
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, prelude::FromRow};
 use tracing::debug;
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     traits::ToSimpleExpr,
 };
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, FromRow)]
 pub struct ColumnResolverArgs {
     name: String,
     id: serde_json::Value,
@@ -124,129 +124,48 @@ pub fn column_resolver_gen(column: ColDef, ctx: ResolverContext<'_>) -> FieldFut
     })
 }
 
-pub fn list_resolver(table_info: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn view_resolver_gen(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
-        debug!("Executing list resolver for table: {:?}", table_info.name);
-
-        let db = ctx.data::<SqlitePool>()?;
-
-        let table_name = table_info.name.to_string();
-
-        let pk_col = table_info
-            .columns
-            .iter()
-            .find(|spec| {
-                spec.options.iter().any(|spec| {
-                    if let ColumnOption::Unique {
-                        is_primary,
-                        characteristics: _,
-                    } = spec.option
-                    {
-                        is_primary
-                    } else {
-                        false
-                    }
-                })
-            })
-            .ok_or(anyhow!("Unable to find primary key"))?;
-
-        let input = ctx.args.try_get("input")?.object()?;
-
-        let page = input.try_get("page")?.u64()?;
-        let limit = input.try_get("limit")?.u64()?;
-
-        debug!("List query parameters - page: {}, limit: {}", page, limit);
-
-        let query = Query::select()
-            .from(Alias::new(table_name))
-            .column(Alias::new(pk_col.name.to_string()))
-            .offset((page - 1) * limit)
-            .limit(limit)
-            .to_string(SqliteQueryBuilder);
-
-        debug!("Generated SQL query: {}", query);
-
-        let result = sqlx::query_as::<_, (i64,)>(&query)
-            .fetch_all(db)
-            .await
-            .map_err(|e| {
-                debug!("Database query failed: {}", e);
-                e
-            })?
-            .into_iter()
-            .map(|(val,)| {
-                serde_json::json!({
-                  "name":pk_col.name.to_string(),
-                  "id":val,
-                })
-            })
-            .map(|val| Value::from_json(val).unwrap())
-            .collect::<Vec<_>>();
-
-        debug!("List resolver returned {} items", result.len());
-        Ok(Some(Value::List(result)))
-    })
-}
-
-pub fn view_resolver(table_info: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
-    FieldFuture::new(async move {
-        debug!("Executing view resolver for table: {:?}", table_info.name);
+        debug!("Executing view resolver for table: {:?}", table.name);
 
         let db = ctx.data::<SqlitePool>()?;
 
         let id = ctx
             .args
-            .get("input")
-            .ok_or(anyhow::anyhow!("Unable to get id"))?
-            .object()?
             .get("id")
             .ok_or(anyhow!("Unable to get id"))?
             .i64()?;
 
         debug!("View query for ID: {}", id);
 
-        let table_name = table_info.name;
+        let table_name = table.name;
 
-        let pk_col = table_info
+        let pk_col = table
             .columns
             .iter()
-            .find(|spec| {
-                spec.options.iter().any(|spec| {
-                    if let ColumnOption::Unique {
-                        is_primary,
-                        characteristics: _,
-                    } = spec.option
-                    {
-                        is_primary
-                    } else {
-                        false
-                    }
-                })
-            })
+            .find(|col| col.is_primary)
             .ok_or(anyhow!("Unable to find primary key"))?;
 
         let query = Query::select()
             .from(Alias::new(table_name.to_string()))
-            .column(Alias::new(pk_col.name.to_string()))
+            .expr(Expr::cust(format!("json_object('id',{})", pk_col.name)))
             .and_where(Expr::col(Alias::new(pk_col.name.to_string())).eq(id))
             .to_string(SqliteQueryBuilder);
 
         debug!("Generated SQL query: {}", query);
 
-        let result = sqlx::query_as::<_, (i64,)>(&query)
+        let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
             .fetch_one(db)
             .await
             .map_err(|e| {
                 debug!("Database query failed: {}", e);
                 e
             })
-            .map(|(val,)| {
-                serde_json::json!({
-                  "name":pk_col.name.to_string(),
-                  "id":val,
-                })
+            .map(|(val,)| ColumnResolverArgs {
+                name: pk_col.name.clone(),
+                id: val.get("id").unwrap().clone(),
             })
-            .map(|val| Value::from_json(val).unwrap())?;
+            .map(async_graphql::Value::from)?;
 
         debug!("View resolver found record with ID: {}", id);
         Ok(Some(result))
