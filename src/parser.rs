@@ -547,7 +547,7 @@ impl ToGraphqlNode for CreateTable {
 impl From<TableDef> for ListQuery {
     fn from(value: TableDef) -> Self {
         let field = Field::new(
-            value.name.clone() + "s", // todo: make this plural properly
+            pluralizer::pluralize(&value.name.clone(), 2, false), // todo: make this plural properly
             TypeRef::named_list(format!("{}_node", value.name)),
             move |_| todo!("Implement proper list query"),
         );
@@ -566,7 +566,7 @@ impl From<TableDef> for ViewQuery {
             .clone();
 
         let field = Field::new(
-            value.name.clone(), // todo: make this plural properly
+            pluralizer::pluralize(&value.name.clone(), 1, false), // todo: make this plural properly
             TypeRef::named(format!("{}_node", value.name)),
             move |_| todo!("Implement proper list query"),
         )
