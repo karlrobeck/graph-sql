@@ -202,31 +202,36 @@ pub fn foreign_key_resolver(
             .ok_or(anyhow::anyhow!("Unable to cast id into i64"))?;
 
         let query = Query::select()
-            .from_as(Alias::new(foreign_info.table.clone()), Alias::new("f"))
+            .from_as(Alias::new(foreign_info.table.clone()), Alias::new("parent"))
             .expr(Expr::cust_with_values(
-                format!("json_object(?,f.{})", foreign_info.from),
-                [foreign_info.from.clone()],
+                format!("json_object(?,parent.{})", foreign_info.to),
+                [foreign_info.to.clone()],
             ))
             .inner_join(
-                Alias::new(foreign_info.table.clone()),
-                Expr::col((
-                    Alias::new(foreign_info.table.clone()),
-                    Alias::new(foreign_info.to.to_string()),
-                ))
-                .equals((Alias::new("f"), Alias::new(foreign_info.from.clone()))),
+                Alias::new(foreign_info.main_table.clone()),
+                Expr::col((Alias::new("parent"), Alias::new(foreign_info.to.clone()))).equals((
+                    Alias::new(foreign_info.main_table.clone()),
+                    Alias::new(foreign_info.from.clone()),
+                )),
             )
             .and_where(
-                Expr::col((Alias::new(foreign_info.table.clone()), Alias::new(pk_name))).eq(pk_id),
+                Expr::col((
+                    Alias::new(foreign_info.main_table.clone()),
+                    Alias::new(pk_name),
+                ))
+                .eq(pk_id),
             )
             .to_string(SqliteQueryBuilder);
+
+        println!("{:#?}", query);
 
         let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
             .fetch_one(db)
             .await
             .map(|(map_val,)| map_val.as_object().unwrap().clone())
             .map(|val| ColumnResolverArgs {
-                name: foreign_info.from.clone(),
-                id: val.get(&foreign_info.from).unwrap().clone(),
+                name: foreign_info.to.clone(),
+                id: val.get(&foreign_info.to).unwrap().clone(),
             })
             .map(async_graphql::Value::from)?;
 

@@ -28,14 +28,14 @@ where
     ) -> impl std::future::Future<Output = async_graphql::Result<Vec<Self>>> + Send;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TableDef {
     pub name: String,                // name of the table
     pub columns: Vec<ColDef>,        // column definitions
     pub description: Option<String>, // table description
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ColDef {
     pub table_name: String,          // name of the table that it belongs to
     pub name: String,                // name of the column
@@ -46,14 +46,15 @@ pub struct ColDef {
     pub relationship: Option<ForeignColDef>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ForeignColDef {
     pub table: String, // The name of the parent table referenced by the foreign key.
     pub from: String,  // The name of the column in the child table (the table you're querying).
     pub to: String,    // The name of the column in the parent table that is referenced.
+    pub main_table: String, // the name of the current table that is resides in
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ColDataType {
     String,
     Integer,
@@ -120,18 +121,29 @@ impl From<ColDef> for async_graphql::dynamic::TypeRef {
 
 impl From<ColDef> for async_graphql::dynamic::Field {
     fn from(value: ColDef) -> Self {
-        let description = value.description.clone();
+        let description = value.description.clone().unwrap_or_default();
 
-        // if let Some(_) = value.relationship {
-        //     todo!("return foreign key resolver")
-        // }
+        if let Some(foreign_info) = value.clone().relationship {
+            let stripped_name = strip_id_suffix(&foreign_info.from);
+
+            let type_ref = if value.not_null {
+                TypeRef::named_nn(format!("{}_node", foreign_info.table))
+            } else {
+                TypeRef::named(format!("{}_node", foreign_info.table))
+            };
+
+            return Field::new(stripped_name, type_ref, move |ctx| {
+                foreign_key_resolver(foreign_info.clone(), ctx)
+            })
+            .description(description.clone());
+        }
 
         Field::new(
             value.name.clone(),
             TypeRef::from(value.clone()),
             move |ctx| column_resolver_gen(value.clone(), ctx),
         )
-        .description(description.unwrap_or_default())
+        .description(description)
     }
 }
 
@@ -372,6 +384,7 @@ impl Introspector for TableDef {
 
                 // Get foreign key information for this column
                 let fk_query = "SELECT \"table\", \"from\", \"to\" FROM pragma_foreign_key_list(?) WHERE \"from\" = ?";
+
                 let fk_rows = sqlx::query_as::<_, (String, String, String)>(fk_query)
                     .bind(&table_name)
                     .bind(&col_name)
@@ -382,6 +395,7 @@ impl Introspector for TableDef {
                     table: table.clone(),
                     from: from.clone(),
                     to: to.clone(),
+                    main_table: table_name.clone(),
                 });
 
                 let col_def = ColDef {
@@ -405,6 +419,8 @@ impl Introspector for TableDef {
 
             result.push(table_def);
         }
+
+        println!("{:#?}", result);
 
         Ok(result)
     }
