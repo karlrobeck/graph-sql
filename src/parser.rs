@@ -4,6 +4,7 @@ use async_graphql::dynamic::{
 };
 use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, Expr, TableConstraint};
 use sqlx::SqlitePool;
+use stringcase::Caser;
 use tracing::{debug, instrument, warn};
 
 use crate::{
@@ -127,9 +128,9 @@ impl From<ColDef> for async_graphql::dynamic::Field {
             let stripped_name = strip_id_suffix(&foreign_info.from);
 
             let type_ref = if value.not_null {
-                TypeRef::named_nn(format!("{}_node", foreign_info.table))
+                TypeRef::named_nn(format!("{}_node", foreign_info.table).to_camel_case())
             } else {
-                TypeRef::named(format!("{}_node", foreign_info.table))
+                TypeRef::named(format!("{}_node", foreign_info.table).to_camel_case())
             };
 
             return Field::new(stripped_name, type_ref, move |ctx| {
@@ -169,7 +170,7 @@ impl From<ColDef> for NodeInputValues {
 
 impl From<TableDef> for async_graphql::dynamic::Object {
     fn from(value: TableDef) -> Self {
-        let mut table_node = Object::new(format!("{}_node", value.name));
+        let mut table_node = Object::new(format!("{}_node", value.name).to_camel_case());
 
         for col in value.columns {
             table_node = table_node.field(Field::from(col));
@@ -186,8 +187,8 @@ impl From<TableDef> for ListQuery {
         let description = value.description.clone().unwrap_or_default();
 
         let field = Field::new(
-            pluralizer::pluralize(&value.name.clone(), 2, false), // todo: make this plural properly
-            TypeRef::named_list(format!("{}_node", value.name)),
+            pluralizer::pluralize(&value.name.clone(), 2, false).to_camel_case(), // todo: make this plural properly
+            TypeRef::named_list(format!("{}_node", value.name).to_camel_case()),
             move |ctx| list_resolver_gen(value.clone(), ctx),
         )
         .argument(InputValue::new("page", TypeRef::named_nn(TypeRef::INT)))
@@ -209,8 +210,8 @@ impl From<TableDef> for ViewQuery {
             .clone();
 
         let field = Field::new(
-            pluralizer::pluralize(&value.name.clone(), 1, false), // todo: make this plural properly
-            TypeRef::named(format!("{}_node", value.name)),
+            pluralizer::pluralize(&value.name.clone(), 1, false).to_camel_case(), // todo: make this plural properly
+            TypeRef::named(format!("{}_node", value.name).to_camel_case()),
             move |ctx| view_resolver_gen(value.clone(), ctx),
         )
         .argument(InputValue::new(
@@ -224,7 +225,7 @@ impl From<TableDef> for ViewQuery {
 
 impl From<TableDef> for InsertMutation {
     fn from(value: TableDef) -> Self {
-        let mut input = InputObject::new(format!("insert_{}_input", value.name));
+        let mut input = InputObject::new(format!("insert_{}_input", value.name).to_camel_case());
 
         for col in value.columns.iter() {
             let NodeInputValues(insert, _) = NodeInputValues::from(col.clone());
@@ -232,8 +233,8 @@ impl From<TableDef> for InsertMutation {
         }
 
         let field = Field::new(
-            format!("insert_{}", value.name.clone()), // todo: make this plural properly
-            TypeRef::named(format!("{}_node", value.name)),
+            format!("insert_{}", value.name.clone()).to_camel_case(), // todo: make this plural properly
+            TypeRef::named(format!("{}_node", value.name).to_camel_case()),
             move |ctx| insert_resolver(value.clone(), ctx),
         )
         .argument(InputValue::new(
@@ -247,7 +248,7 @@ impl From<TableDef> for InsertMutation {
 
 impl From<TableDef> for UpdateMutation {
     fn from(value: TableDef) -> Self {
-        let mut input = InputObject::new(format!("update_{}_input", value.name));
+        let mut input = InputObject::new(format!("update_{}_input", value.name).to_camel_case());
 
         let pk_col = value
             .columns
@@ -262,8 +263,8 @@ impl From<TableDef> for UpdateMutation {
         }
 
         let field = Field::new(
-            format!("update_{}", value.name.clone()), // todo: make this plural properly
-            TypeRef::named(format!("{}_node", value.name)),
+            format!("update_{}", value.name.clone()).to_camel_case(), // todo: make this plural properly
+            TypeRef::named(format!("{}_node", value.name).to_camel_case()),
             move |ctx| update_resolver(value.clone(), ctx),
         )
         .argument(InputValue::new(
@@ -289,8 +290,8 @@ impl From<TableDef> for DeleteMutation {
             .clone();
 
         let field = Field::new(
-            format!("delete_{}", value.name.clone()), // todo: make this plural properly
-            TypeRef::named(format!("{}_node", value.name)),
+            format!("delete_{}", value.name.clone()).to_camel_case(), // todo: make this plural properly
+            TypeRef::named(format!("{}_node", value.name).to_camel_case()),
             move |ctx| delete_resolver(value.clone(), ctx),
         )
         .argument(InputValue::new(
