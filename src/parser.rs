@@ -291,7 +291,7 @@ impl From<TableDef> for DeleteMutation {
 
         let field = Field::new(
             format!("delete_{}", value.name.clone()).to_camel_case(), // todo: make this plural properly
-            TypeRef::named(format!("{}_node", value.name).to_camel_case()),
+            TypeRef::named(TypeRef::INT),
             move |ctx| delete_resolver(value.clone(), ctx),
         )
         .argument(InputValue::new(
