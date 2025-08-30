@@ -7,4 +7,4 @@ enable-playground = true
 
 [database]
 database-url = "sqlite://:memory:"
-migration-path = "./examples/blog/migrations"
+migration-path = "./examples/ecommerce/migrations"

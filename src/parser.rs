@@ -133,14 +133,14 @@ impl From<ColDef> for async_graphql::dynamic::Field {
                 TypeRef::named(format!("{}_node", foreign_info.table).to_camel_case())
             };
 
-            return Field::new(stripped_name, type_ref, move |ctx| {
+            return Field::new(stripped_name.to_camel_case(), type_ref, move |ctx| {
                 foreign_key_resolver(foreign_info.clone(), ctx)
             })
             .description(description.clone());
         }
 
         Field::new(
-            value.name.clone(),
+            value.name.clone().to_camel_case(),
             TypeRef::from(value.clone()),
             move |ctx| column_resolver_gen(value.clone(), ctx),
         )
@@ -159,9 +159,9 @@ impl From<ColDef> for NodeInputValues {
         };
 
         NodeInputValues(
-            InputValue::new(value.name.to_string(), type_ref),
+            InputValue::new(value.name.to_string().to_camel_case(), type_ref),
             InputValue::new(
-                value.name.to_string(),
+                value.name.to_string().to_camel_case(),
                 TypeRef::named(graphql_type.type_name()),
             ),
         )
