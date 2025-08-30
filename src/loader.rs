@@ -1,9 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::anyhow;
 use async_graphql::dataloader::*;
 use sea_query::{Alias, Expr, Iden, Query, SqliteQueryBuilder};
-use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
+use sqlx::SqlitePool;
 use tracing::{debug, instrument};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -7,7 +7,7 @@
 use anyhow::anyhow;
 use async_graphql::dynamic::{InputObject, InputValue, TypeRef, ValueAccessor};
 use sea_query::SimpleExpr;
-use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, TableConstraint};
+use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, TableConstraint};
 use tracing::{debug, instrument, warn};
 
 use crate::{parser::ColDataType, traits::ToSimpleExpr};

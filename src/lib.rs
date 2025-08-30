@@ -1,26 +1,19 @@
 use async_graphql::{
-    Value,
     dataloader::DataLoader,
-    dynamic::{Field, FieldFuture, Object, Schema, SchemaBuilder, TypeRef},
+    dynamic::{Object, Schema, SchemaBuilder},
     http::GraphiQLSource,
 };
 use async_graphql_axum::GraphQL;
 use axum::{Router, response::Html};
-use sea_query::{Alias, Expr, Query, SqliteQueryBuilder};
-use sqlparser::{
-    ast::{CreateTable, Statement},
-    dialect::SQLiteDialect,
-    parser::Parser,
-};
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{
     config::GraphSQLConfig,
     loader::ColumnRowLoader,
     parser::{Introspector, TableDef},
-    traits::{GraphQLObjectOutput, ToGraphqlObject},
+    traits::GraphQLObjectOutput,
     utils::StringFilter,
 };
 

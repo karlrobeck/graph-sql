@@ -2,22 +2,17 @@ use anyhow::anyhow;
 use async_graphql::dynamic::{
     Enum, EnumItem, Field, InputObject, InputValue, Object, Scalar, TypeRef,
 };
-use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, Expr, TableConstraint};
 use sqlx::SqlitePool;
 use stringcase::Caser;
-use tracing::{debug, instrument, warn};
+use tracing::debug;
 
 use crate::{
     resolvers::{
-        column_resolver_gen, delete_resolver, foreign_key_resolver, insert_resolver,
-        list_resolver_gen, update_resolver, view_resolver_gen,
+        column_resolver, delete_resolver, foreign_key_resolver, insert_resolver, list_resolver,
+        update_resolver, view_resolver,
     },
-    traits::{
-        GraphQLObjectOutput, ToGraphqlEnumExt, ToGraphqlFieldExt, ToGraphqlInputValueExt,
-        ToGraphqlMutations, ToGraphqlNode, ToGraphqlObject, ToGraphqlQueries, ToGraphqlScalarExt,
-        ToGraphqlTypeRefExt,
-    },
-    utils::{find_primary_key_column, strip_id_suffix},
+    traits::GraphQLObjectOutput,
+    utils::strip_id_suffix,
 };
 
 pub trait Introspector
@@ -84,6 +79,52 @@ pub struct UpdateMutation(
 
 pub struct DeleteMutation(async_graphql::dynamic::Field);
 
+pub enum SortOrder {
+    Asc,
+    Desc,
+}
+
+impl SortOrder {
+    fn to_graphql_enum() -> async_graphql::dynamic::Enum {
+        Enum::new("sort_order".to_pascal_case())
+            .item(EnumItem::new("ASC"))
+            .item(EnumItem::new("DESC"))
+    }
+}
+
+impl From<TableDef> for async_graphql::dynamic::Enum {
+    fn from(value: TableDef) -> Self {
+        let mut enum_field = Enum::new(format!("{}_enum_fields", value.name).to_pascal_case());
+
+        for col in value.columns.iter() {
+            enum_field = enum_field.item(EnumItem::new(col.name.to_snake_case().to_uppercase()))
+        }
+
+        enum_field
+    }
+}
+
+pub struct SortInput(async_graphql::dynamic::InputObject);
+
+impl From<TableDef> for SortInput {
+    fn from(value: TableDef) -> Self {
+        let mut input = InputObject::new("sort_arg");
+
+        let enum_field = Enum::from(value.clone());
+
+        input = input.field(InputValue::new(
+            "field",
+            TypeRef::named_nn(enum_field.type_name()),
+        ));
+        input = input.field(InputValue::new(
+            "order",
+            TypeRef::named_nn(SortOrder::to_graphql_enum().type_name()),
+        ));
+
+        Self(input)
+    }
+}
+
 impl TryFrom<String> for ColDataType {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -142,7 +183,7 @@ impl From<ColDef> for async_graphql::dynamic::Field {
         Field::new(
             value.name.clone().to_camel_case(),
             TypeRef::from(value.clone()),
-            move |ctx| column_resolver_gen(value.clone(), ctx),
+            move |ctx| column_resolver(value.clone(), ctx),
         )
         .description(description)
     }
@@ -180,8 +221,6 @@ impl From<TableDef> for async_graphql::dynamic::Object {
     }
 }
 
-// old code
-
 impl From<TableDef> for ListQuery {
     fn from(value: TableDef) -> Self {
         let description = value.description.clone().unwrap_or_default();
@@ -189,7 +228,7 @@ impl From<TableDef> for ListQuery {
         let field = Field::new(
             pluralizer::pluralize(&value.name.clone(), 2, false).to_camel_case(), // todo: make this plural properly
             TypeRef::named_list(format!("{}_node", value.name).to_camel_case()),
-            move |ctx| list_resolver_gen(value.clone(), ctx),
+            move |ctx| list_resolver(value.clone(), ctx),
         )
         .argument(InputValue::new("page", TypeRef::named_nn(TypeRef::INT)))
         .argument(InputValue::new("perPage", TypeRef::named_nn(TypeRef::INT)));
@@ -212,7 +251,7 @@ impl From<TableDef> for ViewQuery {
         let field = Field::new(
             pluralizer::pluralize(&value.name.clone(), 1, false).to_camel_case(), // todo: make this plural properly
             TypeRef::named(format!("{}_node", value.name).to_camel_case()),
-            move |ctx| view_resolver_gen(value.clone(), ctx),
+            move |ctx| view_resolver(value.clone(), ctx),
         )
         .argument(InputValue::new(
             pk_col.name,

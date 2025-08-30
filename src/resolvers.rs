@@ -4,10 +4,7 @@ use async_graphql::{
     dataloader::DataLoader,
     dynamic::{FieldFuture, ResolverContext},
 };
-use base64::{Engine as _, engine::general_purpose};
 use sea_query::{Alias, Expr, Query, SqliteQueryBuilder};
-use serde::Serialize;
-use sqlparser::ast::{ColumnOption, CreateTable};
 use sqlx::{SqlitePool, prelude::FromRow};
 use tracing::debug;
 
@@ -49,7 +46,7 @@ pub struct DynamicFilterCondition {
     op: FilterOperator,
 }
 
-pub fn list_resolver_gen(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn list_resolver(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let db = ctx.data::<SqlitePool>()?;
 
@@ -90,7 +87,7 @@ pub fn list_resolver_gen(table: TableDef, ctx: ResolverContext<'_>) -> FieldFutu
     })
 }
 
-pub fn column_resolver_gen(column: ColDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn column_resolver(column: ColDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         let loader = ctx.data::<DataLoader<ColumnRowLoader>>()?;
 
@@ -122,7 +119,7 @@ pub fn column_resolver_gen(column: ColDef, ctx: ResolverContext<'_>) -> FieldFut
     })
 }
 
-pub fn view_resolver_gen(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn view_resolver(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing view resolver for table: {:?}", table.name);
 

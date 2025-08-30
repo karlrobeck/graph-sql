@@ -33,7 +33,6 @@
 
 use async_graphql::dynamic::{Enum, Field, InputObject, InputValue, Object, Scalar, TypeRef};
 use sea_query::SimpleExpr;
-use sqlparser::ast::{BinaryOperator, DataType};
 
 use crate::parser::ColDataType;
 
