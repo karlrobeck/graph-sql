@@ -214,17 +214,20 @@ impl From<TableDef> for InsertMutation {
     fn from(value: TableDef) -> Self {
         let mut input = InputObject::new(format!("insert_{}_input", value.name));
 
-        for col in value.columns {
-            let NodeInputValues(insert, _) = NodeInputValues::from(col);
-
+        for col in value.columns.iter() {
+            let NodeInputValues(insert, _) = NodeInputValues::from(col.clone());
             input = input.field(insert);
         }
 
         let field = Field::new(
             format!("insert_{}", value.name.clone()), // todo: make this plural properly
             TypeRef::named(format!("{}_node", value.name)),
-            move |_| todo!("Implement proper list query"),
-        );
+            move |ctx| insert_resolver(value.clone(), ctx),
+        )
+        .argument(InputValue::new(
+            "value",
+            TypeRef::named_nn(input.type_name()),
+        ));
 
         InsertMutation(field, vec![input])
     }
@@ -241,23 +244,22 @@ impl From<TableDef> for UpdateMutation {
             .expect("Primary column required")
             .clone();
 
-        for col in value.columns {
-            let NodeInputValues(_, update) = NodeInputValues::from(col);
-
+        for col in value.columns.iter() {
+            let NodeInputValues(_, update) = NodeInputValues::from(col.clone());
             input = input.field(update);
         }
 
         let field = Field::new(
             format!("update_{}", value.name.clone()), // todo: make this plural properly
             TypeRef::named(format!("{}_node", value.name)),
-            move |_| todo!("Implement proper list query"),
+            move |ctx| update_resolver(value.clone(), ctx),
         )
         .argument(InputValue::new(
             pk_col.name,
             TypeRef::named_nn(Scalar::from(pk_col.data_type).type_name()),
         ))
         .argument(InputValue::new(
-            "values",
+            "value",
             TypeRef::named_nn(input.type_name()),
         ));
 
@@ -277,7 +279,7 @@ impl From<TableDef> for DeleteMutation {
         let field = Field::new(
             format!("delete_{}", value.name.clone()), // todo: make this plural properly
             TypeRef::named(format!("{}_node", value.name)),
-            move |_| todo!("Implement proper list query"),
+            move |ctx| delete_resolver(value.clone(), ctx),
         )
         .argument(InputValue::new(
             pk_col.name,
@@ -351,7 +353,7 @@ impl Introspector for TableDef {
 
             let mut columns = Vec::new();
 
-            for (cid, col_name, col_type, not_null, _default_value, is_primary) in column_rows {
+            for (_, col_name, col_type, not_null, _default_value, is_primary) in column_rows {
                 // Convert SQLite type to our ColDataType
                 let data_type = match col_type.to_lowercase().as_str() {
                     "text" | "varchar" | "char" | "string" => ColDataType::String,

@@ -35,6 +35,8 @@ use async_graphql::dynamic::{Enum, Field, InputObject, InputValue, Object, Scala
 use sea_query::SimpleExpr;
 use sqlparser::ast::{BinaryOperator, DataType};
 
+use crate::parser::ColDataType;
+
 /// Converts SQLite column definitions to GraphQL scalar types.
 ///
 /// This trait provides functionality to map SQLite column types to their corresponding
@@ -344,5 +346,5 @@ pub trait ToSimpleExpr {
     ///
     /// A `Result` containing the generated `SimpleExpr` on success, or an `async_graphql::Error`
     /// if the conversion fails due to type mismatch or invalid value format.
-    fn to_simple_expr(self, data_type: &DataType) -> async_graphql::Result<SimpleExpr>;
+    fn to_simple_expr(self, data_type: &ColDataType) -> async_graphql::Result<SimpleExpr>;
 }

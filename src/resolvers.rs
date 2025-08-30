@@ -13,7 +13,7 @@ use tracing::debug;
 
 use crate::{
     loader::{ColumnRowDef, ColumnRowLoader},
-    parser::{ColDef, TableDef},
+    parser::{ColDef, ForeignColDef, TableDef},
     traits::ToSimpleExpr,
 };
 
@@ -118,8 +118,6 @@ pub fn column_resolver_gen(column: ColDef, ctx: ResolverContext<'_>) -> FieldFut
             .await?
             .ok_or(anyhow!("Unable to get row"))?;
 
-        debug!("{:#?}", result);
-
         Ok(Some(Value::from_json(result)?))
     })
 }
@@ -173,18 +171,10 @@ pub fn view_resolver_gen(table: TableDef, ctx: ResolverContext<'_>) -> FieldFutu
 }
 
 pub fn foreign_key_resolver(
-    table_name: String,
-    foreign_table: String,
-    reffered_column: String,
-    col: sqlparser::ast::ColumnDef,
+    foreign_info: ForeignColDef,
     ctx: ResolverContext<'_>,
 ) -> FieldFuture<'_> {
     FieldFuture::new(async move {
-        debug!(
-            "Executing foreign key resolver for table: {} -> {}",
-            table_name, foreign_table
-        );
-
         let db = ctx.data::<SqlitePool>()?;
 
         let parent_value = ctx
@@ -212,46 +202,46 @@ pub fn foreign_key_resolver(
             .ok_or(anyhow::anyhow!("Unable to cast id into i64"))?;
 
         let query = Query::select()
-            .from_as(Alias::new(table_name.clone()), Alias::new("f"))
+            .from_as(Alias::new(foreign_info.table.clone()), Alias::new("f"))
             .expr(Expr::cust_with_values(
-                format!("json_object(?,f.{})", reffered_column),
-                [reffered_column.clone()],
+                format!("json_object(?,f.{})", foreign_info.from),
+                [foreign_info.from.clone()],
             ))
             .inner_join(
-                Alias::new(table_name.clone()),
+                Alias::new(foreign_info.table.clone()),
                 Expr::col((
-                    Alias::new(table_name.clone()),
-                    Alias::new(col.name.to_string()),
+                    Alias::new(foreign_info.table.clone()),
+                    Alias::new(foreign_info.to.to_string()),
                 ))
-                .equals((Alias::new("f"), Alias::new(reffered_column.clone()))),
+                .equals((Alias::new("f"), Alias::new(foreign_info.from.clone()))),
             )
-            .and_where(Expr::col((Alias::new(table_name.clone()), Alias::new(pk_name))).eq(pk_id))
+            .and_where(
+                Expr::col((Alias::new(foreign_info.table.clone()), Alias::new(pk_name))).eq(pk_id),
+            )
             .to_string(SqliteQueryBuilder);
 
         let result = sqlx::query_as::<_, (serde_json::Value,)>(&query)
             .fetch_one(db)
             .await
             .map(|(map_val,)| map_val.as_object().unwrap().clone())
-            .map(|val| {
-                serde_json::json!({
-                    "name":reffered_column,
-                    "id":val.get(&reffered_column).unwrap()
-                })
+            .map(|val| ColumnResolverArgs {
+                name: foreign_info.from.clone(),
+                id: val.get(&foreign_info.from).unwrap().clone(),
             })
-            .map(Value::from_json)?;
+            .map(async_graphql::Value::from)?;
 
-        Ok(Some(result?))
+        Ok(Some(result))
     })
 }
 
-pub fn insert_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn insert_resolver(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing insert resolver for table: {:?}", table.name);
 
         let db = ctx.data::<SqlitePool>()?;
         let table_name = table.name.to_string();
 
-        let input = ctx.args.try_get("input")?;
+        let input = ctx.args.try_get("value")?;
 
         let input = input.object()?;
 
@@ -262,19 +252,7 @@ pub fn insert_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFut
         let pk_col = table
             .columns
             .iter()
-            .find(|spec| {
-                spec.options.iter().any(|spec| {
-                    if let ColumnOption::Unique {
-                        is_primary,
-                        characteristics: _,
-                    } = spec.option
-                    {
-                        is_primary
-                    } else {
-                        false
-                    }
-                })
-            })
+            .find(|col| col.is_primary)
             .ok_or(anyhow!("Unable to find primary key"))?;
 
         let query = binding
@@ -322,7 +300,7 @@ pub fn insert_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFut
     })
 }
 
-pub fn update_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn update_resolver(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing update resolver for table: {:?}", table.name);
 
@@ -331,28 +309,14 @@ pub fn update_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFut
         let pk_col = table
             .columns
             .iter()
-            .find(|spec| {
-                spec.options.iter().any(|spec| {
-                    if let ColumnOption::Unique {
-                        is_primary,
-                        characteristics: _,
-                    } = spec.option
-                    {
-                        is_primary
-                    } else {
-                        false
-                    }
-                })
-            })
+            .find(|col| col.is_primary)
             .ok_or(anyhow!("Unable to find primary key"))?;
 
         let db = ctx.data::<SqlitePool>()?;
 
-        let id = ctx.args.try_get("id")?.i64()?;
+        let id = ctx.args.try_get("id")?;
 
-        debug!("Update query for ID: {}", id);
-
-        let input = ctx.args.try_get("input")?.object()?;
+        let input = ctx.args.try_get("value")?.object()?;
 
         debug!("Update data: {} fields", input.len());
 
@@ -381,7 +345,10 @@ pub fn update_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFut
         query = query.values(values);
 
         // Add WHERE clause for primary key
-        query = query.and_where(Expr::col(Alias::new(pk_col.name.to_string())).eq(id));
+        query = query.and_where(
+            Expr::col(Alias::new(pk_col.name.to_string()))
+                .eq(id.to_simple_expr(&pk_col.data_type)?),
+        );
 
         let query = query.returning(Query::returning().column(Alias::new(pk_col.name.to_string())));
 
@@ -399,12 +366,11 @@ pub fn update_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFut
                 })
             })?;
 
-        debug!("Update completed for ID: {}", id);
         Ok(Some(Value::from_json(result)?))
     })
 }
 
-pub fn delete_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
+pub fn delete_resolver(table: TableDef, ctx: ResolverContext<'_>) -> FieldFuture<'_> {
     FieldFuture::new(async move {
         debug!("Executing delete resolver for table: {:?}", table.name);
 
@@ -413,30 +379,19 @@ pub fn delete_resolver(table: CreateTable, ctx: ResolverContext<'_>) -> FieldFut
         let pk_col = table
             .columns
             .iter()
-            .find(|spec| {
-                spec.options.iter().any(|spec| {
-                    if let ColumnOption::Unique {
-                        is_primary,
-                        characteristics: _,
-                    } = spec.option
-                    {
-                        is_primary
-                    } else {
-                        false
-                    }
-                })
-            })
+            .find(|col| col.is_primary)
             .ok_or(anyhow!("Unable to find primary key"))?;
 
         let db = ctx.data::<SqlitePool>()?;
 
-        let id = ctx.args.try_get("id")?.i64()?;
-
-        debug!("Delete query for ID: {}", id);
+        let id = ctx.args.try_get("id")?;
 
         let query = Query::delete()
             .from_table(Alias::new(table_name))
-            .and_where(Expr::col(Alias::new(pk_col.name.to_string())).eq(id))
+            .and_where(
+                Expr::col(Alias::new(pk_col.name.to_string()))
+                    .eq(id.to_simple_expr(&pk_col.data_type)?),
+            )
             .to_string(SqliteQueryBuilder);
 
         debug!("Generated SQL query: {}", query);

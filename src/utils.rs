@@ -10,7 +10,7 @@ use sea_query::SimpleExpr;
 use sqlparser::ast::{ColumnDef, ColumnOption, CreateTable, DataType, TableConstraint};
 use tracing::{debug, instrument, warn};
 
-use crate::traits::ToSimpleExpr;
+use crate::{parser::ColDataType, traits::ToSimpleExpr};
 
 /// Strips the "_id" suffix from a column name if present.
 ///
@@ -209,24 +209,12 @@ pub fn sanitize_graphql_name(name: &str) -> String {
 }
 
 impl ToSimpleExpr for ValueAccessor<'_> {
-    fn to_simple_expr(
-        self,
-        data_type: &sqlparser::ast::DataType,
-    ) -> async_graphql::Result<SimpleExpr> {
+    fn to_simple_expr(self, data_type: &ColDataType) -> async_graphql::Result<SimpleExpr> {
         match data_type {
-            DataType::Text => self.string().map(Into::into),
-            DataType::Float(_) => self.f64().map(Into::into),
-            DataType::Int(_) => self.i64().map(Into::into),
-            DataType::Blob(_) => self.string().map(Into::into),
-            // enum
-            DataType::Custom(name, _) => {
-                if name.to_string().starts_with("enum_") {
-                    self.enum_name().map(Into::into)
-                } else {
-                    panic!("Unsupported data type")
-                }
-            }
-            _ => panic!("Unsupported data type"),
+            ColDataType::String => self.string().map(Into::into),
+            ColDataType::Float => self.f64().map(Into::into),
+            ColDataType::Integer => self.i64().map(Into::into),
+            ColDataType::Boolean => self.boolean().map(Into::into),
         }
     }
 }
